@@ -1,0 +1,31 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    app_name: str = "BARO API"
+    environment: str = "local"
+    backend_host: str = "127.0.0.1"
+    backend_port: int = 8080
+    database_url: str = "sqlite:///./baro.db"
+    jwt_secret_key: str = Field(default="change-this-secret-in-production")
+    jwt_algorithm: str = "HS256"
+    access_token_expire_seconds: int = 3600
+    refresh_token_expire_seconds: int = 60 * 60 * 24 * 14
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    default_camera_source_kind: str = "test_pattern"
+    default_camera_source_url: str = ""
+    default_webcam_index: int = 0
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

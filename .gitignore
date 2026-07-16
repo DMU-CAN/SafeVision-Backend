@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+BackEnd/.venv/
+
+# Local databases and runtime files
+*.db
+*.sqlite
+*.sqlite3
+BackEnd/baro.db
+
+# Environment files
+.env
+BackEnd/.env
+
+# Frontend dependencies/build output
+node_modules/
+FrontEnd/node_modules/
+FrontEnd/dist/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
