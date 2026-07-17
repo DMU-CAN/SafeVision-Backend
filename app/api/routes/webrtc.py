@@ -42,7 +42,11 @@ def list_sources():
                 {"kind": "rtsp", "description": "CCTV/RTSP stream URL"},
                 {"kind": "webcam", "description": "Local webcam device index"},
                 {"kind": "file", "description": "Local media file path"},
-            ]
+            ],
+            "options": {
+                "yoloEnabled": "Enable YOLO object detection overlay for any video source",
+                "yoloConfidence": "YOLO confidence threshold. Default is configured by YOLO_CONFIDENCE",
+            },
         }
     )
 

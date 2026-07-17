@@ -10,6 +10,8 @@ class CameraSourceRequest(BaseModel):
     kind: SourceKind = "test_pattern"
     url: Optional[str] = None
     device_index: Optional[int] = Field(default=None, alias="deviceIndex")
+    yolo_enabled: Optional[bool] = Field(default=None, alias="yoloEnabled")
+    yolo_confidence: Optional[float] = Field(default=None, alias="yoloConfidence")
 
     model_config = ConfigDict(populate_by_name=True)
 

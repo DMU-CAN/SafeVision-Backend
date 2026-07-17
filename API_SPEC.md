@@ -642,6 +642,8 @@ WebRTC API는 브라우저가 보낸 SDP offer를 FastAPI 백엔드가 받고, �
 | `kind` | string | Y | `test_pattern`, `webcam`, `rtsp`, `file` |
 | `url` | string | N | `rtsp`, `file` 사용 시 필요 |
 | `deviceIndex` | number | N | `webcam` 사용 시 장치 번호. 기본값 0 |
+| `yoloEnabled` | boolean | N | YOLO 객체 탐지 overlay 사용 여부 |
+| `yoloConfidence` | number | N | YOLO 탐지 confidence 기준값 |
 
 #### Request Example: 테스트 패턴
 
@@ -664,6 +666,21 @@ WebRTC API는 브라우저가 보낸 SDP offer를 FastAPI 백엔드가 받고, �
   "source": {
     "kind": "webcam",
     "deviceIndex": 0
+  }
+}
+```
+
+#### Request Example: 백엔드 서버 웹캠 + YOLO
+
+```json
+{
+  "type": "offer",
+  "sdp": "v=0...",
+  "source": {
+    "kind": "webcam",
+    "deviceIndex": 0,
+    "yoloEnabled": true,
+    "yoloConfidence": 0.35
   }
 }
 ```
@@ -791,4 +808,3 @@ body 없음.
 | `danger_zones` | 예정 | 위험 구역 좌표 기능 구현 시 추가 필요 |
 | `safety_events` | 예정 | 감지 이벤트 저장 기능 구현 시 추가 필요 |
 | `maintenance_modes` | 예정 | 정비 모드/제어 잠금 기능 구현 시 추가 필요 |
-

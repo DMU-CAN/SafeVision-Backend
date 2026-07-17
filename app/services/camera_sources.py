@@ -14,6 +14,7 @@ from av import VideoFrame
 
 from app.core.config import get_settings
 from app.schemas.webrtc import CameraSourceRequest
+from app.services.yolo_detector import YoloAnnotatedTrack
 
 
 class CameraSource(ABC):
@@ -23,6 +24,18 @@ class CameraSource(ABC):
 
     async def close(self) -> None:
         return None
+
+
+class YoloCameraSource(CameraSource):
+    def __init__(self, source: CameraSource, confidence: float) -> None:
+        self.source = source
+        self.confidence = confidence
+
+    def create_video_track(self) -> VideoStreamTrack:
+        return YoloAnnotatedTrack(self.source.create_video_track(), self.confidence)
+
+    async def close(self) -> None:
+        await self.source.close()
 
 
 class MediaPlayerSource(CameraSource):
@@ -173,19 +186,29 @@ def build_camera_source(request: CameraSourceRequest | None = None) -> CameraSou
     )
 
     if source.kind == "test_pattern":
-        return TestPatternSource()
+        camera_source: CameraSource = TestPatternSource()
 
-    if source.kind == "rtsp":
+    elif source.kind == "rtsp":
         if not source.url:
             raise ValueError("rtsp source requires url")
-        return RtspCameraSource(source.url)
+        camera_source = RtspCameraSource(source.url)
 
-    if source.kind == "file":
+    elif source.kind == "file":
         if not source.url:
             raise ValueError("file source requires url")
-        return FileCameraSource(source.url)
+        camera_source = FileCameraSource(source.url)
 
-    if source.kind == "webcam":
-        return WebcamCameraSource(source.device_index if source.device_index is not None else settings.default_webcam_index)
+    elif source.kind == "webcam":
+        camera_source = WebcamCameraSource(
+            source.device_index if source.device_index is not None else settings.default_webcam_index
+        )
 
-    raise ValueError(f"Unsupported camera source kind: {source.kind}")
+    else:
+        raise ValueError(f"Unsupported camera source kind: {source.kind}")
+
+    yolo_enabled = settings.yolo_enabled if source.yolo_enabled is None else source.yolo_enabled
+    if not yolo_enabled:
+        return camera_source
+
+    confidence = source.yolo_confidence if source.yolo_confidence is not None else settings.yolo_confidence
+    return YoloCameraSource(camera_source, confidence)

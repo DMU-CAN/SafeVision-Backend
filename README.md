@@ -13,6 +13,7 @@ API 명세는 루트의 `API_SPEC.md`에서 관리하고, 이 문서는 백엔�
 - JWT
 - aiortc
 - OpenCV
+- Ultralytics YOLO
 
 ## 2. 실행 방법
 
@@ -50,6 +51,9 @@ Swagger UI:   http://localhost:8080/docs
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 허용할 프론트엔드 origin |
 | `DEFAULT_CAMERA_SOURCE_KIND` | `test_pattern` | 기본 WebRTC 영상 소스 |
 | `DEFAULT_WEBCAM_INDEX` | `0` | 기본 웹캠 장치 번호 |
+| `YOLO_ENABLED` | `true` | WebRTC 영상에 YOLO 객체 탐지 overlay를 기본 적용할지 여부 |
+| `YOLO_MODEL_PATH` | `yolo11n.pt` | 사용할 YOLO 모델 파일 |
+| `YOLO_CONFIDENCE` | `0.35` | YOLO 탐지 confidence 기준값 |
 
 ## 4. 폴더 구조
 
@@ -84,6 +88,7 @@ BackEnd/
   - `webcam`
   - `rtsp`
   - `file`
+- WebRTC 영상 YOLO 객체 탐지 overlay
 
 ## 6. DB
 
@@ -103,6 +108,7 @@ WebRTC 관련 코드는 아래 파일에 있습니다.
 ```text
 app/api/routes/webrtc.py
 app/services/camera_sources.py
+app/services/yolo_detector.py
 ```
 
 하드웨어 CCTV 또는 IP 카메라를 연결할 때는 카메라 등록 API에 `rtspUrl`을 저장한 뒤 WebRTC offer 요청에서 `cameraId`를 넘기면 됩니다.
@@ -132,6 +138,24 @@ app/services/camera_sources.py
   }
 }
 ```
+
+YOLO 객체 탐지를 켜려면 source에 `yoloEnabled`를 추가합니다.
+
+```json
+{
+  "type": "offer",
+  "sdp": "v=0...",
+  "source": {
+    "kind": "webcam",
+    "deviceIndex": 0,
+    "yoloEnabled": true,
+    "yoloConfidence": 0.35
+  }
+}
+```
+
+기본값이 `YOLO_ENABLED=true`라서 프론트에서 `yoloEnabled`를 보내지 않아도 WebRTC 영상에 YOLO overlay가 적용됩니다.
+특정 요청에서 끄려면 `source.yoloEnabled`를 `false`로 보내면 됩니다.
 
 ## 8. Git 업로드 제외 권장 항목
 

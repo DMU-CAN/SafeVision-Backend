@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     default_camera_source_kind: str = "test_pattern"
     default_camera_source_url: str = ""
     default_webcam_index: int = 0
+    yolo_enabled: bool = True
+    yolo_model_path: str = "yolo11n.pt"
+    yolo_confidence: float = 0.35
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
