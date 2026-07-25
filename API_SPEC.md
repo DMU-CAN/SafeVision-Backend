@@ -114,9 +114,9 @@
 | DangerZone | GET | `/api/v1/danger-zones/{zoneId}` | 위험 구역 상세 조회 | 예정 |
 | DangerZone | PUT | `/api/v1/danger-zones/{zoneId}` | 위험 구역 수정 | 예정 |
 | DangerZone | DELETE | `/api/v1/danger-zones/{zoneId}` | 위험 구역 삭제 | 예정 |
-| SafetyEvent | GET | `/api/v1/safety-events` | 안전 이벤트 목록 조회 | 예정 |
+| SafetyEvent | GET | `/api/v1/safety-events` | 안전 이벤트 목록 조회 | 구현완료 |
 | SafetyEvent | POST | `/api/v1/safety-events` | 안전 이벤트 등록 | 예정 |
-| SafetyEvent | GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 | 예정 |
+| SafetyEvent | GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 | 구현완료 |
 | MaintenanceMode | GET | `/api/v1/maintenance-modes` | 정비 모드 목록 조회 | 예정 |
 | MaintenanceMode | POST | `/api/v1/equipments/{equipmentId}/maintenance-modes` | 정비 모드 시작 | 예정 |
 | MaintenanceMode | PATCH | `/api/v1/maintenance-modes/{maintenanceModeId}/end` | 정비 모드 종료 | 예정 |
@@ -166,7 +166,7 @@ ONLINE, OFFLINE, MAINTENANCE
 
 ### 5.3 equipments
 
-구현 예정.
+부분구현. 현재 API route는 없지만 YOLO 넘어짐 감지 시 백엔드 내부에서 이벤트를 저장합니다.
 
 | DB 컬럼 | 타입 | API 필드 | 설명 |
 |---|---|---|---|
@@ -200,7 +200,7 @@ ONLINE, OFFLINE, MAINTENANCE
 | `equipment_id` | BIGINT | `equipmentId` | 관련 장비 ID |
 | `zone_id` | BIGINT | `zoneId` | 관련 위험 구역 ID |
 | `event_type` | VARCHAR(50) | `eventType` | 이벤트 유형 |
-| `event_level` | VARCHAR(30) | `eventLevel` | 이벤트 등급 |
+| `event_level` | INT | `eventLevel` | 이벤트 등급. 1: 주의, 2: 경고, 3: 위험 |
 
 ### 5.6 maintenance_modes
 
@@ -806,5 +806,5 @@ body 없음.
 | `cameras` | 구현완료 | 카메라 등록 및 WebRTC RTSP 연결에서 사용 |
 | `equipments` | 예정 | 장비 제어 기능 구현 시 추가 필요 |
 | `danger_zones` | 예정 | 위험 구역 좌표 기능 구현 시 추가 필요 |
-| `safety_events` | 예정 | 감지 이벤트 저장 기능 구현 시 추가 필요 |
+| `safety_events` | 부분구현 | YOLO Pose 넘어짐 감지 시 `FALL_DETECTED` 이벤트 저장 및 조회 API 제공 |
 | `maintenance_modes` | 예정 | 정비 모드/제어 잠금 기능 구현 시 추가 필요 |

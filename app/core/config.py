@@ -19,8 +19,12 @@ class Settings(BaseSettings):
     default_camera_source_url: str = ""
     default_webcam_index: int = 0
     yolo_enabled: bool = True
-    yolo_model_path: str = "yolo11n.pt"
+    yolo_model_path: str = "yolo11n-pose.pt"
     yolo_confidence: float = 0.35
+    fall_detection_enabled: bool = True
+    fall_aspect_ratio_threshold: float = 0.8
+    fall_pose_angle_threshold: float = 60.0
+    fall_event_cooldown_seconds: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

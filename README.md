@@ -52,8 +52,12 @@ Swagger UI:   http://localhost:8080/docs
 | `DEFAULT_CAMERA_SOURCE_KIND` | `test_pattern` | 기본 WebRTC 영상 소스 |
 | `DEFAULT_WEBCAM_INDEX` | `0` | 기본 웹캠 장치 번호 |
 | `YOLO_ENABLED` | `true` | WebRTC 영상에 YOLO 객체 탐지 overlay를 기본 적용할지 여부 |
-| `YOLO_MODEL_PATH` | `yolo11n.pt` | 사용할 YOLO 모델 파일 |
+| `YOLO_MODEL_PATH` | `yolo11n-pose.pt` | 사용할 YOLO Pose 모델 파일 |
 | `YOLO_CONFIDENCE` | `0.35` | YOLO 탐지 confidence 기준값 |
+| `FALL_DETECTION_ENABLED` | `true` | YOLO `person` 감지 결과로 넘어짐 감지를 수행할지 여부 |
+| `FALL_ASPECT_RATIO_THRESHOLD` | `0.8` | pose 낙상 판정 시 함께 확인할 bbox 가로/세로 비율 |
+| `FALL_POSE_ANGLE_THRESHOLD` | `60.0` | 몸통 각도가 수직 기준 이 값 이상이면 넘어짐 후보로 판단 |
+| `FALL_EVENT_COOLDOWN_SECONDS` | `10` | 같은 WebRTC track에서 넘어짐 이벤트를 다시 저장하기 전 대기 시간 |
 
 ## 4. 폴더 구조
 
@@ -89,6 +93,7 @@ BackEnd/
   - `rtsp`
   - `file`
 - WebRTC 영상 YOLO 객체 탐지 overlay
+- YOLO Pose 기반 넘어짐 감지 콘솔 로그 및 `safety_events` 저장
 
 ## 6. DB
 
@@ -99,7 +104,8 @@ BackEnd/
 - `users`
 - `cameras`
 
-ERD 기준의 `equipments`, `danger_zones`, `safety_events`, `maintenance_modes`는 추후 기능 구현 시 SQLAlchemy model과 route를 추가해야 합니다.
+ERD 기준의 `equipments`, `danger_zones`, `maintenance_modes`는 추후 기능 구현 시 SQLAlchemy model과 route를 추가해야 합니다.
+`safety_events`는 YOLO Pose 넘어짐 감지 이력 저장과 조회 API까지 부분 구현되어 있습니다.
 
 ## 7. WebRTC 영상 소스
 

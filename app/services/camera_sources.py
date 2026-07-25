@@ -27,12 +27,13 @@ class CameraSource(ABC):
 
 
 class YoloCameraSource(CameraSource):
-    def __init__(self, source: CameraSource, confidence: float) -> None:
+    def __init__(self, source: CameraSource, confidence: float, camera_id: int | None = None) -> None:
         self.source = source
         self.confidence = confidence
+        self.camera_id = camera_id
 
     def create_video_track(self) -> VideoStreamTrack:
-        return YoloAnnotatedTrack(self.source.create_video_track(), self.confidence)
+        return YoloAnnotatedTrack(self.source.create_video_track(), self.confidence, camera_id=self.camera_id)
 
     async def close(self) -> None:
         await self.source.close()
@@ -179,7 +180,7 @@ class TestPatternSource(CameraSource):
             self.track.stop()
 
 
-def build_camera_source(request: CameraSourceRequest | None = None) -> CameraSource:
+def build_camera_source(request: CameraSourceRequest | None = None, camera_id: int | None = None) -> CameraSource:
     settings = get_settings()
     source = request or CameraSourceRequest(
         kind=settings.default_camera_source_kind, url=settings.default_camera_source_url or None
@@ -211,4 +212,4 @@ def build_camera_source(request: CameraSourceRequest | None = None) -> CameraSou
         return camera_source
 
     confidence = source.yolo_confidence if source.yolo_confidence is not None else settings.yolo_confidence
-    return YoloCameraSource(camera_source, confidence)
+    return YoloCameraSource(camera_source, confidence, camera_id=camera_id)

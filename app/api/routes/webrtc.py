@@ -53,7 +53,7 @@ def list_sources():
 
 def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSource:
     if payload.source:
-        return build_camera_source(payload.source)
+        return build_camera_source(payload.source, camera_id=payload.camera_id)
 
     if payload.camera_id is not None:
         camera = db.get(Camera, payload.camera_id)
@@ -62,7 +62,7 @@ def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSou
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response("CAMERA_NOT_FOUND", "카메라를 찾을 수 없습니다."),
             )
-        return build_camera_source(CameraSourceRequest(kind="rtsp", url=camera.rtsp_url))
+        return build_camera_source(CameraSourceRequest(kind="rtsp", url=camera.rtsp_url), camera_id=camera.id)
 
     return build_camera_source()
 
