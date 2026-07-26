@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-SourceKind = Literal["test_pattern", "rtsp", "webcam", "file"]
+SourceKind = Literal["test_pattern", "rtsp", "webcam", "file", "ip_camera"]
 
 
 class CameraSourceRequest(BaseModel):

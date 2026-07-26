@@ -1,6 +1,7 @@
 import asyncio
 import math
 import socket
+import threading
 import time
 from abc import ABC, abstractmethod
 from fractions import Fraction
@@ -90,17 +91,44 @@ class FileCameraSource(MediaPlayerSource):
 
 
 class OpenCVCameraTrack(VideoStreamTrack):
-    def __init__(self, device_index: int) -> None:
+    """Continuously grabs frames in a background thread and always serves the
+    most recent one, so slow downstream consumers (e.g. CPU YOLO inference)
+    don't cause frames to pile up in OpenCV's internal buffer and accumulate
+    delay over time."""
+
+    def __init__(self, device: int | str) -> None:
         super().__init__()
-        self.capture = cv2.VideoCapture(device_index)
+        self.capture = cv2.VideoCapture(device)
         if not self.capture.isOpened():
-            raise ValueError(f"Could not open webcam device index {device_index}")
+            raise ValueError(f"Could not open camera source: {device}")
+        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        self._lock = threading.Lock()
+        self._latest_frame = None
+        self._running = True
+        self._thread = threading.Thread(target=self._grab_loop, daemon=True)
+        self._thread.start()
+
+    def _grab_loop(self) -> None:
+        while self._running:
+            ok, frame = self.capture.read()
+            if not ok:
+                time.sleep(0.05)
+                continue
+            with self._lock:
+                self._latest_frame = frame
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
-        ok, frame = await asyncio.to_thread(self.capture.read)
-        if not ok:
-            raise ValueError("Could not read frame from webcam")
+
+        for _ in range(100):
+            with self._lock:
+                frame = self._latest_frame
+            if frame is not None:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            raise ValueError("Could not read frame from camera source")
 
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
@@ -110,6 +138,16 @@ class OpenCVCameraTrack(VideoStreamTrack):
 
     def stop(self) -> None:
         super().stop()
+        self._running = False
+
+    async def aclose(self) -> None:
+        # capture.release() can block for a while if the grab thread is mid
+        # cap.read() on a slow/stalled network stream, so this must never run
+        # directly on the asyncio event loop thread.
+        await asyncio.to_thread(self._release)
+
+    def _release(self) -> None:
+        self._thread.join(timeout=3)
         self.capture.release()
 
 
@@ -125,6 +163,22 @@ class WebcamCameraSource(CameraSource):
     async def close(self) -> None:
         if self.track:
             self.track.stop()
+            await self.track.aclose()
+
+
+class IpCameraSource(CameraSource):
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.track: OpenCVCameraTrack | None = None
+
+    def create_video_track(self) -> VideoStreamTrack:
+        self.track = OpenCVCameraTrack(self.url)
+        return self.track
+
+    async def close(self) -> None:
+        if self.track:
+            self.track.stop()
+            await self.track.aclose()
 
 
 class TestPatternTrack(VideoStreamTrack):
@@ -203,6 +257,11 @@ def build_camera_source(request: CameraSourceRequest | None = None, camera_id: i
         camera_source = WebcamCameraSource(
             source.device_index if source.device_index is not None else settings.default_webcam_index
         )
+
+    elif source.kind == "ip_camera":
+        if not source.url:
+            raise ValueError("ip_camera source requires url")
+        camera_source = IpCameraSource(source.url)
 
     else:
         raise ValueError(f"Unsupported camera source kind: {source.kind}")

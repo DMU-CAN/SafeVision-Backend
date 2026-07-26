@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8080:8080"
+    devices:
+      - /dev/hailo0:/dev/hailo0
+    volumes:
+      - ./baro.db:/app/baro.db
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8080
+    restart: unless-stopped

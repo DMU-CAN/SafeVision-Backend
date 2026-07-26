@@ -34,3 +34,6 @@ FrontEnd/dist/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Hailo Developer Zone downloads (not redistributable, download manually)
+vendor/*.whl

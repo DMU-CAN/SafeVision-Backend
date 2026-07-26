@@ -10,6 +10,7 @@ from av import VideoFrame
 
 from app.core.config import get_settings
 from app.services.safety_event_logger import record_fall_detected_event
+from app.services.zone_service import is_point_in_zone
 
 
 @dataclass(frozen=True)
@@ -118,18 +119,37 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         image = frame.to_ndarray(format="bgr24")
         detector = get_yolo_detector()
         detections = await asyncio.to_thread(detector.detect, image, self.confidence)
-        fall_detections = self._find_fall_detections(detections)
-        self._record_fall_event_if_needed(fall_detections)
 
+        settings = get_settings()
+        fall_detections: list[Detection] = []
         for detection in detections:
-            self._draw_detection(image, detection, detection in fall_detections)
+            torso_angle, aspect_ratio = self._pose_metrics(detection)
+            is_fall = (
+                detection.class_name == "person"
+                and torso_angle is not None
+                and torso_angle >= settings.fall_pose_angle_threshold
+                and aspect_ratio >= settings.fall_aspect_ratio_threshold
+            )
+            if is_fall:
+                fall_detections.append(detection)
+            self._draw_detection(image, detection, is_fall, torso_angle, aspect_ratio)
+
+        frame_height, frame_width = image.shape[:2]
+        self._record_fall_event_if_needed(fall_detections, frame_width, frame_height)
 
         annotated_frame = VideoFrame.from_ndarray(image, format="bgr24")
         annotated_frame.pts = frame.pts
         annotated_frame.time_base = frame.time_base
         return annotated_frame
 
-    def _draw_detection(self, image, detection: Detection, is_fall: bool) -> None:
+    def _draw_detection(
+        self,
+        image,
+        detection: Detection,
+        is_fall: bool,
+        torso_angle: float | None,
+        aspect_ratio: float | None,
+    ) -> None:
         x1, y1, x2, y2 = [int(value) for value in detection.box]
         color = (0, 0, 255) if is_fall else (0, 255, 0)
         label = f"FALL {detection.confidence:.2f}" if is_fall else f"{detection.class_name} {detection.confidence:.2f}"
@@ -145,6 +165,26 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             2,
             cv2.LINE_AA,
         )
+
+        if detection.class_name == "person":
+            settings = get_settings()
+            angle_text = f"{torso_angle:.0f}deg" if torso_angle is not None else "n/a"
+            ratio_text = f"{aspect_ratio:.2f}" if aspect_ratio is not None else "n/a"
+            debug_text = (
+                f"angle {angle_text}/{settings.fall_pose_angle_threshold:.0f} "
+                f"ratio {ratio_text}/{settings.fall_aspect_ratio_threshold:.2f}"
+            )
+            cv2.putText(
+                image,
+                debug_text,
+                (x1, min(y2 + 20, image.shape[0] - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+
         self._draw_pose(image, detection.keypoints, color)
 
     def _draw_pose(self, image, keypoints: list[Keypoint], color) -> None:
@@ -161,31 +201,17 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             if point.confidence >= 0.3:
                 cv2.circle(image, (int(point.x), int(point.y)), 3, color, -1, cv2.LINE_AA)
 
-    def _find_fall_detections(self, detections: list[Detection]) -> list[Detection]:
-        settings = get_settings()
-        if not settings.fall_detection_enabled:
-            return []
-
-        return [detection for detection in detections if self._is_pose_fall(detection)]
-
-    def _is_pose_fall(self, detection: Detection) -> bool:
-        if detection.class_name != "person":
-            return False
-
-        torso_angle = self._torso_angle_from_vertical(detection.keypoints)
-        if torso_angle is None:
-            return False
-
+    def _pose_metrics(self, detection: Detection) -> tuple[float | None, float | None]:
         x1, y1, x2, y2 = detection.box
         width = max(x2 - x1, 1.0)
         height = max(y2 - y1, 1.0)
         aspect_ratio = width / height
-        settings = get_settings()
 
-        return (
-            torso_angle >= settings.fall_pose_angle_threshold
-            and aspect_ratio >= settings.fall_aspect_ratio_threshold
-        )
+        if detection.class_name != "person" or not get_settings().fall_detection_enabled:
+            return None, aspect_ratio
+
+        torso_angle = self._torso_angle_from_vertical(detection.keypoints)
+        return torso_angle, aspect_ratio
 
     def _torso_angle_from_vertical(self, keypoints: list[Keypoint]) -> float | None:
         left_shoulder = self._visible_keypoint(keypoints, 5)
@@ -214,8 +240,17 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         keypoint = keypoints[index]
         return keypoint if keypoint.confidence >= 0.3 else None
 
-    def _record_fall_event_if_needed(self, fall_detections: list[Detection]) -> None:
+    def _record_fall_event_if_needed(
+        self, fall_detections: list[Detection], frame_width: int, frame_height: int
+    ) -> None:
         if not fall_detections:
+            return
+
+        in_zone = any(
+            is_point_in_zone(self.camera_id, *self._foot_point(detection), frame_width, frame_height)
+            for detection in fall_detections
+        )
+        if not in_zone:
             return
 
         settings = get_settings()
@@ -225,3 +260,7 @@ class YoloAnnotatedTrack(VideoStreamTrack):
 
         self.last_fall_event_at = now
         record_fall_detected_event(camera_id=self.camera_id)
+
+    def _foot_point(self, detection: Detection) -> tuple[float, float]:
+        x1, _, x2, y2 = detection.box
+        return (x1 + x2) / 2, y2
