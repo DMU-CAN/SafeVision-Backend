@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.db.session import SessionLocal
 from app.models.safety_event import SafetyEvent
+from app.services.motor_controller import get_motor_controller
 
 
 def record_fall_detected_event(camera_id: int | None = None) -> None:
@@ -23,3 +24,5 @@ def record_fall_detected_event(camera_id: int | None = None) -> None:
         print(f"[BARO][FALL_DETECTED][DB_ERROR] {exc}")
     finally:
         db.close()
+
+    get_motor_controller().stop()

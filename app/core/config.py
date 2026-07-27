@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     fall_aspect_ratio_threshold: float = 0.8
     fall_pose_angle_threshold: float = 60.0
     fall_event_cooldown_seconds: int = 10
+    motor_control_enabled: bool = True
+    motor_serial_port: str = "/dev/ttyACM0"
+    motor_serial_baud: int = 9600
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
