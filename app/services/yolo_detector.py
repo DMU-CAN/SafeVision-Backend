@@ -113,16 +113,26 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         self.confidence = confidence
         self.camera_id = camera_id
         self.last_fall_event_at = 0.0
+        self.last_inference_at = 0.0
+        self.cached_detections: list[Detection] = []
 
     async def recv(self) -> VideoFrame:
         frame = await self.source_track.recv()
         image = frame.to_ndarray(format="bgr24")
-        detector = get_yolo_detector()
-        detections = await asyncio.to_thread(detector.detect, image, self.confidence)
 
         settings = get_settings()
+        now = time.monotonic()
+        # Every frame is still pulled from the source track above (so the
+        # upstream reader never stalls/backs up), but the expensive
+        # detect() call only runs a few times a second — frames in between
+        # reuse the last detections instead of re-running inference.
+        if now - self.last_inference_at >= settings.yolo_inference_interval_seconds:
+            self.last_inference_at = now
+            detector = get_yolo_detector()
+            self.cached_detections = await asyncio.to_thread(detector.detect, image, self.confidence)
+
         fall_detections: list[Detection] = []
-        for detection in detections:
+        for detection in self.cached_detections:
             torso_angle, aspect_ratio = self._pose_metrics(detection)
             is_fall = (
                 detection.class_name == "person"

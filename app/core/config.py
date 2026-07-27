@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     yolo_model_path: str = "yolo11n-pose.pt"
     yolo_confidence: float = 0.35
+    yolo_inference_interval_seconds: float = 0.2
     fall_detection_enabled: bool = True
     fall_aspect_ratio_threshold: float = 0.8
     fall_pose_angle_threshold: float = 60.0
