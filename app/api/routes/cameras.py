@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import asyncio
+
+import cv2
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,6 +10,7 @@ from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreateRequest, CameraResponse, CameraUpdateRequest, StreamUrlResponse
+from app.services.camera_sources import build_camera_source
 
 
 router = APIRouter()
@@ -75,3 +80,34 @@ def get_camera_stream_url(camera_id: int, db: Session = Depends(get_db)):
     camera = get_camera_or_404(camera_id, db)
     data = StreamUrlResponse(camera_id=camera.id, stream_url=camera.rtsp_url).model_dump(mode="json", by_alias=True)
     return success_response(data=data)
+
+
+async def _mjpeg_frames(camera: Camera, confidence: float | None):
+    camera_source = build_camera_source(camera, confidence=confidence)
+    try:
+        track = await asyncio.to_thread(camera_source.create_video_track)
+        while True:
+            frame = await track.recv()
+            image = frame.to_ndarray(format="bgr24")
+            ok, buffer = await asyncio.to_thread(cv2.imencode, ".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+            if not ok:
+                continue
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            )
+    finally:
+        await camera_source.close()
+
+
+@router.get("/{camera_id}/mjpeg")
+async def stream_camera_mjpeg(
+    camera_id: int,
+    yolo_confidence: float | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    camera = get_camera_or_404(camera_id, db)
+    return StreamingResponse(
+        _mjpeg_frames(camera, yolo_confidence),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
