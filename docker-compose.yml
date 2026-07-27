@@ -11,4 +11,5 @@ services:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8080
       - YOLO_MODEL_PATH=models/yolo11n-pose_hailo_model
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://192.168.0.8:5173
     restart: unless-stopped
