@@ -54,7 +54,11 @@ class RtspCameraSource(CameraSource):
         self.player = MediaPlayer(
             self.url,
             options={
-                "rtsp_transport": "tcp",
+                # UDP tolerates a slow downstream consumer (e.g. Hailo/YOLO
+                # inference lagging behind real-time): lost packets are just
+                # dropped. TCP applies backpressure all the way back to the
+                # RTSP server, which then times out and kills the session.
+                "rtsp_transport": "udp",
                 "stimeout": "5000000",
                 "rw_timeout": "5000000",
             },
