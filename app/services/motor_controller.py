@@ -1,3 +1,4 @@
+import time
 from functools import lru_cache
 
 from app.core.config import get_settings
@@ -22,6 +23,13 @@ class MotorController:
 
         try:
             self._serial = serial.Serial(self.port, self.baudrate, timeout=1)
+            # Opening the port toggles DTR, which resets most Arduino
+            # boards. The bootloader needs a couple seconds before the
+            # sketch is running and actually listening — a command sent
+            # immediately after open() gets silently dropped during that
+            # window (this only costs time once, connection stays open
+            # afterward).
+            time.sleep(2)
         except Exception as exc:
             print(f"[BARO][MOTOR] Could not open serial port {self.port}: {exc}")
             self._serial = None
