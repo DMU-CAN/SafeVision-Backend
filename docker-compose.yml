@@ -10,4 +10,5 @@ services:
     environment:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8080
+      - YOLO_MODEL_PATH=models/yolo11n-pose_hailo_model
     restart: unless-stopped
