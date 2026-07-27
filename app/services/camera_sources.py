@@ -1,20 +1,12 @@
-import asyncio
-import math
 import socket
-import threading
-import time
 from abc import ABC, abstractmethod
-from fractions import Fraction
 from urllib.parse import urlparse
 
-import cv2
-import numpy as np
 from aiortc import VideoStreamTrack
 from aiortc.contrib.media import MediaPlayer
-from av import VideoFrame
 
 from app.core.config import get_settings
-from app.schemas.webrtc import CameraSourceRequest
+from app.models.camera import Camera
 from app.services.yolo_detector import YoloAnnotatedTrack
 
 
@@ -40,34 +32,10 @@ class YoloCameraSource(CameraSource):
         await self.source.close()
 
 
-class MediaPlayerSource(CameraSource):
-    def __init__(self, url: str, options: dict[str, str] | None = None) -> None:
-        self.url = url
-        self.options = options or {}
-        self.player: MediaPlayer | None = None
-
-    def create_video_track(self) -> VideoStreamTrack:
-        self.player = MediaPlayer(self.url, options=self.options)
-        if self.player.video is None:
-            raise ValueError(f"Video track is not available from source: {self.url}")
-        return self.player.video
-
-    async def close(self) -> None:
-        if self.player:
-            self.player.video and self.player.video.stop()
-            self.player.audio and self.player.audio.stop()
-
-
-class RtspCameraSource(MediaPlayerSource):
+class RtspCameraSource(CameraSource):
     def __init__(self, url: str) -> None:
-        super().__init__(
-            url,
-            options={
-                "rtsp_transport": "tcp",
-                "stimeout": "5000000",
-                "rw_timeout": "5000000",
-            },
-        )
+        self.url = url
+        self.player: MediaPlayer | None = None
 
     def create_video_track(self) -> VideoStreamTrack:
         parsed_url = urlparse(self.url)
@@ -83,192 +51,26 @@ class RtspCameraSource(MediaPlayerSource):
         except OSError as exc:
             raise ValueError(f"RTSP source is not reachable: {host}:{port}") from exc
 
-        return super().create_video_track()
-
-
-class FileCameraSource(MediaPlayerSource):
-    pass
-
-
-class OpenCVCameraTrack(VideoStreamTrack):
-    """Continuously grabs frames in a background thread and always serves the
-    most recent one, so slow downstream consumers (e.g. CPU YOLO inference)
-    don't cause frames to pile up in OpenCV's internal buffer and accumulate
-    delay over time."""
-
-    def __init__(self, device: int | str) -> None:
-        super().__init__()
-        self.capture = cv2.VideoCapture(device)
-        if not self.capture.isOpened():
-            raise ValueError(f"Could not open camera source: {device}")
-        self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        self._lock = threading.Lock()
-        self._latest_frame = None
-        self._running = True
-        self._thread = threading.Thread(target=self._grab_loop, daemon=True)
-        self._thread.start()
-
-    def _grab_loop(self) -> None:
-        while self._running:
-            ok, frame = self.capture.read()
-            if not ok:
-                time.sleep(0.05)
-                continue
-            with self._lock:
-                self._latest_frame = frame
-
-    async def recv(self) -> VideoFrame:
-        pts, time_base = await self.next_timestamp()
-
-        for _ in range(100):
-            with self._lock:
-                frame = self._latest_frame
-            if frame is not None:
-                break
-            await asyncio.sleep(0.05)
-        else:
-            raise ValueError("Could not read frame from camera source")
-
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
-        video_frame.pts = pts
-        video_frame.time_base = time_base
-        return video_frame
-
-    def stop(self) -> None:
-        super().stop()
-        self._running = False
-
-    async def aclose(self) -> None:
-        # capture.release() can block for a while if the grab thread is mid
-        # cap.read() on a slow/stalled network stream, so this must never run
-        # directly on the asyncio event loop thread.
-        await asyncio.to_thread(self._release)
-
-    def _release(self) -> None:
-        self._thread.join(timeout=3)
-        self.capture.release()
-
-
-class WebcamCameraSource(CameraSource):
-    def __init__(self, device_index: int) -> None:
-        self.device_index = device_index
-        self.track: OpenCVCameraTrack | None = None
-
-    def create_video_track(self) -> VideoStreamTrack:
-        self.track = OpenCVCameraTrack(self.device_index)
-        return self.track
-
-    async def close(self) -> None:
-        if self.track:
-            self.track.stop()
-            await self.track.aclose()
-
-
-class IpCameraSource(CameraSource):
-    def __init__(self, url: str) -> None:
-        self.url = url
-        self.track: OpenCVCameraTrack | None = None
-
-    def create_video_track(self) -> VideoStreamTrack:
-        self.track = OpenCVCameraTrack(self.url)
-        return self.track
-
-    async def close(self) -> None:
-        if self.track:
-            self.track.stop()
-            await self.track.aclose()
-
-
-class TestPatternTrack(VideoStreamTrack):
-    def __init__(self) -> None:
-        super().__init__()
-        self.start_time = time.monotonic()
-        self.frame_index = 0
-
-    async def recv(self) -> VideoFrame:
-        await asyncio.sleep(1 / 30)
-        width, height = 1280, 720
-        elapsed = time.monotonic() - self.start_time
-        x = np.linspace(0, 255, width, dtype=np.uint8)
-        y = np.linspace(0, 255, height, dtype=np.uint8)
-        gradient_x = np.tile(x, (height, 1))
-        gradient_y = np.tile(y[:, None], (1, width))
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
-        frame[:, :, 0] = gradient_x
-        frame[:, :, 1] = gradient_y
-        frame[:, :, 2] = ((gradient_x.astype(int) + gradient_y.astype(int)) // 2).astype(np.uint8)
-
-        center_x = int(width / 2 + math.sin(elapsed) * width / 4)
-        center_y = int(height / 2 + math.cos(elapsed * 0.8) * height / 5)
-        cv2.circle(frame, (center_x, center_y), 70, (255, 255, 255), -1)
-        cv2.putText(
-            frame,
-            "BARO WebRTC test source",
-            (40, height - 48),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1.2,
-            (255, 255, 255),
-            3,
-            cv2.LINE_AA,
+        self.player = MediaPlayer(
+            self.url,
+            options={
+                "rtsp_transport": "tcp",
+                "stimeout": "5000000",
+                "rw_timeout": "5000000",
+            },
         )
-
-        video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
-        video_frame.pts = self.frame_index
-        video_frame.time_base = Fraction(1, 30)
-        self.frame_index += 1
-        return video_frame
-
-
-class TestPatternSource(CameraSource):
-    def __init__(self) -> None:
-        self.track: TestPatternTrack | None = None
-
-    def create_video_track(self) -> VideoStreamTrack:
-        self.track = TestPatternTrack()
-        return self.track
+        if self.player.video is None:
+            raise ValueError(f"Video track is not available from source: {self.url}")
+        return self.player.video
 
     async def close(self) -> None:
-        if self.track:
-            self.track.stop()
+        if self.player:
+            self.player.video and self.player.video.stop()
+            self.player.audio and self.player.audio.stop()
 
 
-def build_camera_source(request: CameraSourceRequest | None = None, camera_id: int | None = None) -> CameraSource:
+def build_camera_source(camera: Camera, confidence: float | None = None) -> CameraSource:
     settings = get_settings()
-    source = request or CameraSourceRequest(
-        kind=settings.default_camera_source_kind, url=settings.default_camera_source_url or None
-    )
-
-    if source.kind == "test_pattern":
-        camera_source: CameraSource = TestPatternSource()
-
-    elif source.kind == "rtsp":
-        if not source.url:
-            raise ValueError("rtsp source requires url")
-        camera_source = RtspCameraSource(source.url)
-
-    elif source.kind == "file":
-        if not source.url:
-            raise ValueError("file source requires url")
-        camera_source = FileCameraSource(source.url)
-
-    elif source.kind == "webcam":
-        camera_source = WebcamCameraSource(
-            source.device_index if source.device_index is not None else settings.default_webcam_index
-        )
-
-    elif source.kind == "ip_camera":
-        if not source.url:
-            raise ValueError("ip_camera source requires url")
-        camera_source = IpCameraSource(source.url)
-
-    else:
-        raise ValueError(f"Unsupported camera source kind: {source.kind}")
-
-    yolo_enabled = settings.yolo_enabled if source.yolo_enabled is None else source.yolo_enabled
-    if not yolo_enabled:
-        return camera_source
-
-    confidence = source.yolo_confidence if source.yolo_confidence is not None else settings.yolo_confidence
-    return YoloCameraSource(camera_source, confidence, camera_id=camera_id)
+    source: CameraSource = RtspCameraSource(camera.rtsp_url)
+    resolved_confidence = confidence if confidence is not None else settings.yolo_confidence
+    return YoloCameraSource(source, resolved_confidence, camera_id=camera.id)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
-from app.schemas.webrtc import CameraSourceRequest, WebRTCAnswerResponse, WebRTCOfferRequest, WebRTCSessionResponse
+from app.schemas.webrtc import WebRTCAnswerResponse, WebRTCOfferRequest, WebRTCSessionResponse
 from app.services.camera_sources import CameraSource, build_camera_source
 
 
@@ -33,39 +33,14 @@ async def close_session(session_id: str) -> None:
     await session.peer_connection.close()
 
 
-@router.get("/sources")
-def list_sources():
-    return success_response(
-        data={
-            "items": [
-                {"kind": "test_pattern", "description": "Generated test video"},
-                {"kind": "rtsp", "description": "CCTV/RTSP stream URL"},
-                {"kind": "webcam", "description": "Local webcam device index"},
-                {"kind": "file", "description": "Local media file path"},
-                {"kind": "ip_camera", "description": "HTTP/MJPEG IP camera stream URL (e.g. DroidCam)"},
-            ],
-            "options": {
-                "yoloEnabled": "Enable YOLO object detection overlay for any video source",
-                "yoloConfidence": "YOLO confidence threshold. Default is configured by YOLO_CONFIDENCE",
-            },
-        }
-    )
-
-
-def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSource:
-    if payload.source:
-        return build_camera_source(payload.source, camera_id=payload.camera_id)
-
-    if payload.camera_id is not None:
-        camera = db.get(Camera, payload.camera_id)
-        if camera is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error_response("CAMERA_NOT_FOUND", "카메라를 찾을 수 없습니다."),
-            )
-        return build_camera_source(CameraSourceRequest(kind="rtsp", url=camera.rtsp_url), camera_id=camera.id)
-
-    return build_camera_source()
+def resolve_camera(payload: WebRTCOfferRequest, db: Session) -> Camera:
+    camera = db.get(Camera, payload.camera_id)
+    if camera is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response("CAMERA_NOT_FOUND", "카메라를 찾을 수 없습니다."),
+        )
+    return camera
 
 
 @router.post("/offer")
@@ -74,7 +49,8 @@ async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depend
     peer_connection = RTCPeerConnection()
 
     try:
-        camera_source = resolve_camera_source(payload, db)
+        camera = resolve_camera(payload, db)
+        camera_source = build_camera_source(camera, confidence=payload.yolo_confidence)
         video_track = await asyncio.to_thread(camera_source.create_video_track)
         peer_connection.addTrack(video_track)
 
@@ -94,6 +70,9 @@ async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depend
             session_id=session_id,
         )
         return success_response(data=response.model_dump(mode="json", by_alias=True), message="WebRTC answer가 생성되었습니다.")
+    except HTTPException:
+        await peer_connection.close()
+        raise
     except Exception as exc:
         await peer_connection.close()
         raise HTTPException(
