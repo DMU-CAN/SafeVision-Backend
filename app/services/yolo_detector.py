@@ -148,8 +148,11 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         self._record_fall_event_if_needed(fall_detections, frame_width, frame_height)
 
         annotated_frame = VideoFrame.from_ndarray(image, format="bgr24")
-        annotated_frame.pts = frame.pts
-        annotated_frame.time_base = frame.time_base
+        # Use our own monotonic timestamp for the outgoing WebRTC track
+        # rather than propagating the source's pts/time_base verbatim —
+        # source clocks (e.g. an RTSP stream's own timebase) can confuse
+        # aiortc's encoder and result in a black/undecodable output.
+        annotated_frame.pts, annotated_frame.time_base = await self.next_timestamp()
         return annotated_frame
 
     def _draw_detection(
