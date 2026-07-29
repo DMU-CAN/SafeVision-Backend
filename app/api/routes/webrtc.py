@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
+from app.models.robot import Robot
 from app.schemas.webrtc import WebRTCAnswerResponse, WebRTCOfferRequest, WebRTCSessionResponse
-from app.services.camera_sources import CameraSource, build_camera_source
+from app.services.camera_sources import CameraSource, RtspCameraSource, build_camera_source
 
 
 router = APIRouter()
@@ -33,14 +34,31 @@ async def close_session(session_id: str) -> None:
     await session.peer_connection.close()
 
 
-def resolve_camera(payload: WebRTCOfferRequest, db: Session) -> Camera:
-    camera = db.get(Camera, payload.camera_id)
-    if camera is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error_response("CAMERA_NOT_FOUND", "카메라를 찾을 수 없습니다."),
-        )
-    return camera
+def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSource:
+    if payload.camera_id is not None:
+        camera = db.get(Camera, payload.camera_id)
+        if camera is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response("CAMERA_NOT_FOUND", "카메라를 찾을 수 없습니다."),
+            )
+        return build_camera_source(camera, confidence=payload.yolo_confidence, yolo_enabled=payload.yolo_enabled)
+
+    if payload.robot_id is not None:
+        robot = db.get(Robot, payload.robot_id)
+        if robot is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response("ROBOT_NOT_FOUND", "로봇을 찾을 수 없습니다."),
+            )
+        # Robot cameras are always plain passthrough — YOLO overlay is a
+        # fixed-camera concept (zones are defined per fixed camera view).
+        return RtspCameraSource(robot.camera_rtsp_url)
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=error_response("INVALID_REQUEST", "cameraId 또는 robotId 중 하나가 필요합니다."),
+    )
 
 
 @router.post("/offer")
@@ -49,8 +67,7 @@ async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depend
     peer_connection = RTCPeerConnection()
 
     try:
-        camera = resolve_camera(payload, db)
-        camera_source = build_camera_source(camera, confidence=payload.yolo_confidence)
+        camera_source = resolve_camera_source(payload, db)
         video_track = await asyncio.to_thread(camera_source.create_video_track)
         peer_connection.addTrack(video_track)
 

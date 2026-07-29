@@ -44,6 +44,8 @@ def create_camera(payload: CameraCreateRequest, db: Session = Depends(get_db)):
         rtsp_url=payload.rtsp_url,
         location=payload.location,
         status=payload.status,
+        location_x=payload.location_x,
+        location_y=payload.location_y,
     )
     db.add(camera)
     db.commit()

@@ -73,8 +73,10 @@ class RtspCameraSource(CameraSource):
             self.player.audio and self.player.audio.stop()
 
 
-def build_camera_source(camera: Camera, confidence: float | None = None) -> CameraSource:
+def build_camera_source(camera: Camera, confidence: float | None = None, yolo_enabled: bool = True) -> CameraSource:
     settings = get_settings()
     source: CameraSource = RtspCameraSource(camera.rtsp_url)
+    if not yolo_enabled:
+        return source
     resolved_confidence = confidence if confidence is not None else settings.yolo_confidence
     return YoloCameraSource(source, resolved_confidence, camera_id=camera.id)

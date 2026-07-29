@@ -114,6 +114,16 @@
 | SafetyEvent | POST | `/api/v1/safety-events` | 안전 이벤트 등록 | 예정 |
 | SafetyEvent | GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 | 구현완료 |
 | SafetyEvent | GET | `/api/v1/safety-events/{eventId}/clip` | 이벤트 영상 클립 재생 | 구현완료 |
+| Robot | GET | `/api/v1/robots` | 현장 로봇 목록 조회 | 구현완료 |
+| Robot | POST | `/api/v1/robots` | 현장 로봇 등록 | 구현완료 |
+| Robot | GET | `/api/v1/robots/{robotId}` | 현장 로봇 상세 조회 | 구현완료 |
+| Robot | PUT | `/api/v1/robots/{robotId}` | 현장 로봇 정보 수정 | 구현완료 |
+| Robot | DELETE | `/api/v1/robots/{robotId}` | 현장 로봇 삭제 | 구현완료 |
+| Robot | POST | `/api/v1/robots/{robotId}/ptz` | PTZ/이동 명령 전송 | 구현완료 |
+| Robot | POST | `/api/v1/robots/{robotId}/dispatch` | 로봇 출동 기록 생성 | 구현완료 |
+| Robot | GET | `/api/v1/robots/{robotId}/dispatches` | 로봇 출동 이력 조회 | 구현완료 |
+| Emergency | POST | `/api/v1/emergency/contact` | 응급센터 연결 요청 (스텁) | 구현완료 |
+| Emergency | POST | `/api/v1/emergency/share` | 응급센터에 현장 상황 공유 (스텁) | 구현완료 |
 | MaintenanceMode | GET | `/api/v1/maintenance-modes` | 정비 모드 목록 조회 | 예정 |
 | MaintenanceMode | POST | `/api/v1/equipments/{equipmentId}/maintenance-modes` | 정비 모드 시작 | 예정 |
 | MaintenanceMode | PATCH | `/api/v1/maintenance-modes/{maintenanceModeId}/end` | 정비 모드 종료 | 예정 |
@@ -154,6 +164,8 @@ ADMIN, MANAGER, OPERATOR
 | `rtsp_url` | VARCHAR(255) | `rtspUrl` | CCTV/RTSP 스트림 주소 |
 | `location` | VARCHAR(255) | `location` | 설치 위치 |
 | `status` | VARCHAR(30) | `status` | 카메라 상태 |
+| `location_x` | FLOAT, nullable | `locationX` | 실내 도면 좌표 (로봇 출동 목표 계산에 사용, 미설정 시 null) |
+| `location_y` | FLOAT, nullable | `locationY` | 실내 도면 좌표 |
 
 권장 status 값:
 
@@ -656,7 +668,9 @@ WebRTC API는 브라우저가 보낸 SDP offer를 FastAPI 백엔드가 받고, �
 |---|---|---|---|
 | `sdp` | string | Y | 브라우저가 생성한 SDP offer |
 | `type` | string | Y | `offer` |
-| `cameraId` | number | N | 등록된 카메라 ID. 지정 시 DB의 `rtspUrl` 사용 |
+| `cameraId` | number | N | 등록된 카메라 ID. 지정 시 DB의 `rtspUrl` 사용 (`robotId`와 둘 중 하나 필수) |
+| `robotId` | number | N | 등록된 로봇 ID. 지정 시 로봇 탑재 카메라(`cameraRtspUrl`) 사용, YOLO 오버레이 항상 비적용 (`cameraId`와 둘 중 하나 필수) |
+| `yoloEnabled` | boolean | N | `cameraId` 사용 시 YOLO 스켈레톤 오버레이 여부. 기본값 `true`. `false`로 주면 원본 CCTV 화면 |
 | `source` | object | N | 직접 지정하는 영상 소스 |
 
 `source` object:
@@ -876,6 +890,127 @@ body 없음.
 - 인증: 현재 미적용
 - 상태: 구현완료
 - Response 형태는 `stop`과 동일 (`message`: "설비 재가동 명령을 전송했습니다.")
+
+## 11.5 Robot (현장 로봇)
+
+현장 로봇은 자체 라즈베리파이(와이파이 통신)를 탑재한 이동형 장치입니다. `controlAddress`(`host:port`)로 PTZ/이동 명령을 HTTP POST로 전송하고, `cameraRtspUrl`로 탑재 카메라 영상을 받습니다. 실제 라우터 파일: `app/api/routes/robots.py`, prefix `/api/v1/robots`.
+
+로봇 Pi가 꺼져있거나 응답이 없어도 에러를 던지지 않고 `sent: false`를 반환합니다(`send_robot_command`가 예외를 삼킴, 타임아웃 기본 2초).
+
+### GET `/api/v1/robots`
+
+- 상태: 구현완료
+
+#### Response 200
+
+```json
+{
+  "success": true,
+  "data": { "items": [
+    {
+      "id": 1,
+      "name": "현장로봇-1",
+      "controlAddress": "192.168.0.50:8081",
+      "cameraRtspUrl": "rtsp://192.168.0.50:8554/cam",
+      "locationX": 120.5,
+      "locationY": 340.0,
+      "status": "IDLE",
+      "createdAt": "2026-07-29T11:49:21.149814Z"
+    }
+  ] },
+  "message": "요청이 정상 처리되었습니다."
+}
+```
+
+`status`: `IDLE` | `DISPATCHED` | `OFFLINE`. `locationX`/`locationY`는 실내 도면 좌표(카메라의 `locationX`/`locationY`와 동일한 좌표계), 로봇의 현재 위치.
+
+### POST `/api/v1/robots`
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `name` | string | Y | 로봇 이름 |
+| `controlAddress` | string | Y | 로봇 Pi 주소, `host:port` |
+| `cameraRtspUrl` | string | Y | 로봇 탑재 카메라 RTSP URL |
+| `locationX` | number | N | 도면 좌표 |
+| `locationY` | number | N | 도면 좌표 |
+
+응답은 목록의 개별 항목과 동일한 형태.
+
+### PUT `/api/v1/robots/{robotId}` / DELETE `/api/v1/robots/{robotId}`
+
+카메라 CRUD와 동일한 패턴 (부분 수정, 204 삭제).
+
+### POST `/api/v1/robots/{robotId}/ptz`
+
+#### Request Body
+
+```json
+{ "direction": "up" }
+```
+
+`direction`: `up` | `down` | `left` | `right` | `zoomIn` | `zoomOut` | `stop`. 로봇 Pi의 `http://{controlAddress}/command`로 `{"type":"ptz","direction":...}` JSON을 그대로 POST합니다 — 로봇 Pi 쪽에서 이 엔드포인트를 구현해야 합니다.
+
+#### Response 200
+
+```json
+{ "success": true, "data": { "sent": true }, "message": "PTZ 명령을 전송했습니다." }
+```
+
+### POST `/api/v1/robots/{robotId}/dispatch`
+
+로봇을 출동 상태로 바꾸고 출동 기록을 남깁니다. `safetyEventId`를 주면 그 이벤트가 발생한 카메라의 `locationX`/`locationY`를 출동 목표 좌표로 자동 채웁니다(카메라에 좌표가 설정되어 있어야 함).
+
+#### Request Body
+
+```json
+{ "safetyEventId": 12 }
+```
+
+`safetyEventId`는 선택값(생략 가능, 이 경우 targetX/Y는 null).
+
+#### Response 201
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1, "robotId": 1, "safetyEventId": 12,
+    "targetX": 120.5, "targetY": 340.0,
+    "dispatchedAt": "2026-07-29T11:49:36.102996Z"
+  },
+  "message": "로봇을 출동시켰습니다."
+}
+```
+
+### GET `/api/v1/robots/{robotId}/dispatches`
+
+최근 20건의 출동 이력을 위 응답과 같은 형태의 배열로 반환합니다.
+
+## 11.6 Emergency (응급센터, 스텁)
+
+실제 응급센터 연동 시스템이 아직 없어서, 이 두 엔드포인트는 서버 로그에 기록만 하고 성공 응답을 반환하는 스텁입니다. 실제 시스템이 생기면 이 안쪽 구현만 교체하면 되도록 요청/응답 형태를 맞춰뒀습니다. 실제 라우터 파일: `app/api/routes/emergency.py`.
+
+### POST `/api/v1/emergency/contact`
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `robotId` | number | N | 관련 로봇 |
+| `safetyEventId` | number | N | 관련 이벤트 |
+| `message` | string | N | 상황 메모 |
+
+#### Response 200
+
+```json
+{ "success": true, "data": { "connected": true }, "message": "응급센터에 연결 요청을 전송했습니다." }
+```
+
+### POST `/api/v1/emergency/share`
+
+요청/응답 형태는 `contact`와 동일 (`data.shared`, `message`: "현장 상황을 공유했습니다.")
 
 ## 12. 구현 예정 API
 
