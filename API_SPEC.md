@@ -104,16 +104,12 @@
 | WebRTC | POST | `/api/v1/webrtc/offer` | SDP offer를 받아 SDP answer 생성 | 구현완료 |
 | WebRTC | GET | `/api/v1/webrtc/sessions/{sessionId}` | WebRTC 세션 상태 조회 | 구현완료 |
 | WebRTC | DELETE | `/api/v1/webrtc/sessions/{sessionId}` | WebRTC 세션 종료 | 구현완료 |
-| Equipment | GET | `/api/v1/equipments` | 장비 목록 조회 | 예정 |
-| Equipment | POST | `/api/v1/equipments` | 장비 등록 | 예정 |
-| Equipment | GET | `/api/v1/equipments/{equipmentId}` | 장비 상세 조회 | 예정 |
-| Equipment | PUT | `/api/v1/equipments/{equipmentId}` | 장비 정보 수정 | 예정 |
-| Equipment | DELETE | `/api/v1/equipments/{equipmentId}` | 장비 삭제 | 예정 |
-| DangerZone | GET | `/api/v1/danger-zones` | 위험 구역 목록 조회 | 예정 |
-| DangerZone | POST | `/api/v1/danger-zones` | 위험 구역 등록 | 예정 |
-| DangerZone | GET | `/api/v1/danger-zones/{zoneId}` | 위험 구역 상세 조회 | 예정 |
-| DangerZone | PUT | `/api/v1/danger-zones/{zoneId}` | 위험 구역 수정 | 예정 |
-| DangerZone | DELETE | `/api/v1/danger-zones/{zoneId}` | 위험 구역 삭제 | 예정 |
+| Equipment | POST | `/api/v1/equipment/stop` | 설비 정지 명령 전송 | 구현완료 |
+| Equipment | POST | `/api/v1/equipment/slow` | 설비 감속 명령 전송 | 구현완료 |
+| Equipment | POST | `/api/v1/equipment/resume` | 설비 재가동 명령 전송 | 구현완료 |
+| Zone | GET | `/api/v1/zones` | 위험 구역 목록 조회 | 구현완료 |
+| Zone | POST | `/api/v1/zones` | 위험 구역 등록 | 구현완료 |
+| Zone | DELETE | `/api/v1/zones/{zoneId}` | 위험 구역 삭제 | 구현완료 |
 | SafetyEvent | GET | `/api/v1/safety-events` | 안전 이벤트 목록 조회 | 구현완료 |
 | SafetyEvent | POST | `/api/v1/safety-events` | 안전 이벤트 등록 | 예정 |
 | SafetyEvent | GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 | 구현완료 |
@@ -164,9 +160,9 @@ ADMIN, MANAGER, OPERATOR
 ONLINE, OFFLINE, MAINTENANCE
 ```
 
-### 5.3 equipments
+### 5.3 equipments (설비 DB 테이블)
 
-부분구현. 현재 API route는 없지만 YOLO 넘어짐 감지 시 백엔드 내부에서 이벤트를 저장합니다.
+예정. 아래 `/api/v1/equipment/*` 제어 API는 이 DB 테이블 없이 시리얼 포트로 직접 명령을 전송하는 별도 기능이며, 여러 설비를 구분해 관리하려면 이 테이블 구현이 필요합니다.
 
 | DB 컬럼 | 타입 | API 필드 | 설명 |
 |---|---|---|---|
@@ -176,31 +172,31 @@ ONLINE, OFFLINE, MAINTENANCE
 | `control_address` | VARCHAR(100) | `controlAddress` | 제어 주소 |
 | `updated_at` | TIMESTAMP | `updatedAt` | 수정 일시 |
 
-### 5.4 danger_zones
+### 5.4 zones
 
-구현 예정.
+현재 구현완료. (ERD상 명칭은 `danger_zones`이지만 실제 테이블/엔드포인트명은 `zones`입니다.)
 
 | DB 컬럼 | 타입 | API 필드 | 설명 |
 |---|---|---|---|
 | `id` | BIGINT | `id` | 위험 구역 PK |
-| `camera_id` | BIGINT | `cameraId` | 연결 카메라 ID |
-| `equipment_id` | BIGINT | `equipmentId` | 연결 장비 ID |
+| `camera_id` | BIGINT, nullable | `cameraId` | 연결 카메라 ID |
 | `name` | VARCHAR(100) | `name` | 위험 구역 이름 |
-| `polygon_coordinates` | JSON | `polygonCoordinates` | 화면 좌표 다각형 |
-| `created_at` | TIMESTAMP | `createdAt` | 생성 일시 |
+| `points` | JSON | `points` | `[{x, y}, ...]` 꼭짓점 배열. 프론트 `CameraFeed`의 1000x600 정규화 좌표 기준, 실제 카메라 해상도와 무관 |
+| `is_active` | BOOLEAN | `isActive` | 활성 여부 (삭제는 실제로 row를 지움, soft-delete 필드는 아님) |
 
 ### 5.5 safety_events
 
-구현 예정.
+현재 구현완료. (YOLO Pose 넘어짐 감지 시 `FALL_DETECTED` 이벤트가 저장되며, 등록/생성 API는 아직 없고 백엔드 내부에서만 적재됩니다.)
 
 | DB 컬럼 | 타입 | API 필드 | 설명 |
 |---|---|---|---|
 | `id` | BIGINT | `id` | 이벤트 PK |
-| `camera_id` | BIGINT | `cameraId` | 발생 카메라 ID |
-| `equipment_id` | BIGINT | `equipmentId` | 관련 장비 ID |
-| `zone_id` | BIGINT | `zoneId` | 관련 위험 구역 ID |
+| `camera_id` | BIGINT, nullable | `cameraId` | 발생 카메라 ID |
+| `equipment_id` | BIGINT, nullable | `equipmentId` | 관련 장비 ID |
+| `zone_id` | BIGINT, nullable | `zoneId` | 관련 위험 구역 ID |
 | `event_type` | VARCHAR(50) | `eventType` | 이벤트 유형 |
-| `event_level` | INT | `eventLevel` | 이벤트 등급. 1: 주의, 2: 경고, 3: 위험 |
+| `event_level` | INT | `eventLevel` | 이벤트 등급 |
+| `created_at` | TIMESTAMP | `createdAt` | 생성 일시 |
 
 ### 5.6 maintenance_modes
 
@@ -748,13 +744,118 @@ WebRTC 세션을 종료합니다.
 
 body 없음.
 
-## 10. 구현 예정 API
+## 10. Zone
+
+카메라 화면 기준 위험 구역 좌표를 관리합니다. 실제 라우터 파일: `app/api/routes/zones.py`, prefix `/api/v1/zones`.
+
+### GET `/api/v1/zones`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+- Query: `cameraId`(number, optional) — 지정 시 해당 카메라 소속 구역 + 카메라 미지정 구역을 함께 반환
+
+#### Response 200
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "cameraId": 1,
+      "name": "기본 위험구역",
+      "points": [{ "x": 420, "y": 245 }, { "x": 790, "y": 250 }, { "x": 860, "y": 510 }, { "x": 355, "y": 510 }],
+      "isActive": true
+    }
+  ],
+  "message": "요청이 정상 처리되었습니다."
+}
+```
+
+### POST `/api/v1/zones`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+
+#### Request Body
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `name` | string | Y | 위험 구역 이름 |
+| `cameraId` | number | N | 연결 카메라 ID |
+| `points` | array | Y | `{ x: number, y: number }` 객체 배열 |
+
+#### Response 201
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "cameraId": 1,
+    "name": "기본 위험구역",
+    "points": [{ "x": 420, "y": 245 }],
+    "isActive": true
+  },
+  "message": "위험구역이 저장되었습니다."
+}
+```
+
+### DELETE `/api/v1/zones/{zoneId}`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+
+#### Response 204
+
+body 없음.
+
+#### Errors
+
+| Status | 설명 |
+|---:|---|
+| 404 | 해당 zoneId의 위험 구역 없음 |
+
+## 11. Equipment (설비 제어)
+
+시리얼(Arduino)로 연결된 설비에 정지/감속/재가동 명령을 전송합니다. DB에 저장하지 않는 즉시 명령 API이며, 실제 라우터 파일: `app/api/routes/equipment.py`, prefix `/api/v1/equipment`. 설비를 여러 대 구분해 제어하는 기능은 아직 없습니다(장비 ID 파라미터 없음).
+
+시리얼 포트 연결이 안 돼 있어도 에러를 던지지 않고 `sent: false`를 반환합니다(`MotorController`가 예외를 삼킴).
+
+### POST `/api/v1/equipment/stop`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+
+#### Response 200
+
+```json
+{
+  "success": true,
+  "data": { "sent": true },
+  "message": "설비 정지 명령을 전송했습니다."
+}
+```
+
+### POST `/api/v1/equipment/slow`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+- Response 형태는 `stop`과 동일 (`message`: "설비 감속 명령을 전송했습니다.")
+
+### POST `/api/v1/equipment/resume`
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+- Response 형태는 `stop`과 동일 (`message`: "설비 재가동 명령을 전송했습니다.")
+
+## 12. 구현 예정 API
 
 아래 API는 ERD 기준으로 필요한 항목이지만 현재 백엔드 코드에는 아직 구현되어 있지 않습니다.
 
-### 10.1 Equipment
+### 12.1 Equipment (DB 리소스)
 
-장비 정보를 관리합니다.
+위 11장의 `/equipment/*`는 단일 설비를 가정한 명령 전송 API이고, 아래는 여러 설비를 등록/구분 관리하기 위한 별도의 CRUD API입니다.
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -764,29 +865,13 @@ body 없음.
 | PUT | `/api/v1/equipments/{equipmentId}` | 장비 정보 수정 |
 | DELETE | `/api/v1/equipments/{equipmentId}` | 장비 삭제 |
 
-### 10.2 DangerZone
-
-카메라 화면 기준 위험 구역 좌표를 관리합니다.
+### 12.2 SafetyEvent 등록
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/api/v1/danger-zones` | 위험 구역 목록 조회 |
-| POST | `/api/v1/danger-zones` | 위험 구역 등록 |
-| GET | `/api/v1/danger-zones/{zoneId}` | 위험 구역 상세 조회 |
-| PUT | `/api/v1/danger-zones/{zoneId}` | 위험 구역 수정 |
-| DELETE | `/api/v1/danger-zones/{zoneId}` | 위험 구역 삭제 |
+| POST | `/api/v1/safety-events` | 안전 이벤트 등록 (현재는 YOLO 감지 시 백엔드 내부에서만 적재, 외부 등록 API 없음) |
 
-### 10.3 SafetyEvent
-
-안전 이벤트를 저장하고 조회합니다.
-
-| Method | Path | 설명 |
-|---|---|---|
-| GET | `/api/v1/safety-events` | 안전 이벤트 목록 조회 |
-| POST | `/api/v1/safety-events` | 안전 이벤트 등록 |
-| GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 |
-
-### 10.4 MaintenanceMode
+### 12.3 MaintenanceMode
 
 장비 정비 모드와 제어 잠금 상태를 관리합니다.
 
@@ -796,15 +881,114 @@ body 없음.
 | POST | `/api/v1/equipments/{equipmentId}/maintenance-modes` | 정비 모드 시작 |
 | PATCH | `/api/v1/maintenance-modes/{maintenanceModeId}/end` | 정비 모드 종료 |
 
-## 11. 현재 구현 DB와 ERD 차이
+## 13. 현재 구현 DB와 ERD 차이
 
-현재 FastAPI 백엔드는 1차 구현 범위로 `users`, `cameras` 테이블만 실제 SQLAlchemy 모델로 구현되어 있습니다.
+현재 FastAPI 백엔드는 `users`, `cameras`, `zones`, `safety_events` 테이블이 실제 SQLAlchemy 모델로 구현되어 있습니다.
 
 | ERD 테이블 | 현재 구현 상태 | 비고 |
 |---|---|---|
-| `users` | 구현완료 | 회원가입/로그인에서 사용 |
-| `cameras` | 구현완료 | 카메라 등록 및 WebRTC RTSP 연결에서 사용 |
-| `equipments` | 예정 | 장비 제어 기능 구현 시 추가 필요 |
-| `danger_zones` | 예정 | 위험 구역 좌표 기능 구현 시 추가 필요 |
-| `safety_events` | 부분구현 | YOLO Pose 넘어짐 감지 시 `FALL_DETECTED` 이벤트 저장 및 조회 API 제공 |
+| `users` | 구현완료 | 회원가입/로그인에서 사용. 프론트는 아직 미연동 |
+| `cameras` | 구현완료 | 카메라 등록, MJPEG 스트리밍, WebRTC RTSP 연결에서 사용 |
+| `equipments`(DB 리소스) | 예정 | 다중 설비 관리 기능 구현 시 추가 필요. 단일 설비 제어 명령(`/equipment/stop` 등)은 이미 구현되어 있으며 이 테이블과 무관 |
+| `zones`(ERD상 `danger_zones`) | 구현완료 | 위험 구역 좌표 등록/조회/삭제 API 제공 |
+| `safety_events` | 구현됨(등록 API 제외) | YOLO Pose 넘어짐 감지 시 `FALL_DETECTED` 이벤트 저장, 목록/상세 조회 API 제공. 외부에서 이벤트를 등록하는 API는 없음 |
 | `maintenance_modes` | 예정 | 정비 모드/제어 잠금 기능 구현 시 추가 필요 |
+## 14. Frontend Integration Contract
+
+This section defines the contract required by `SafeVision-Frontend`. The frontend currently uses mock data; the mappings below are required when replacing it with API calls.
+
+### 14.1 Common response handling
+
+Successful JSON responses use `{ "success": true, "data": {}, "message": "" }`. The `data` shape is endpoint-specific: `GET /cameras` returns `{ "items": [...] }`, while `GET /safety-events` and `GET /zones` return arrays. Dates are ISO 8601 strings. DELETE success responses have status `204` and no body.
+
+### 14.2 Camera mapping
+
+Backend camera status values are `ONLINE`, `OFFLINE`, and `MAINTENANCE`. Frontend values must be mapped to `online`, `offline`, and `maintenance`. The frontend-only `alert` state is derived from recent unacknowledged safety events and is not a camera status returned by the backend.
+
+Backend camera IDs are numeric. The frontend must retain the numeric ID for API calls and derive display labels such as `CAM-01` by padding the ID. `name` and `location` are separate backend fields; a frontend `label` must be composed from them.
+
+Camera APIs:
+
+```http
+GET /api/v1/cameras
+GET /api/v1/cameras/{cameraId}
+GET /api/v1/cameras/{cameraId}/mjpeg
+POST /api/v1/webrtc/offer
+```
+
+The WebRTC request body is `{ "sdp": string, "type": "offer", "cameraId": number, "yoloConfidence"?: number }`.
+
+### 14.3 Safety event mapping
+
+Backend events contain `id`, `cameraId`, `equipmentId`, `zoneId`, `eventType`, `eventLevel`, and `createdAt`. The frontend display model (`severity`, `title`, `description`, `meta`, `actionLabel`) is a view model and must be built by the frontend:
+
+| Backend | Frontend rule |
+|---|---|
+| `id` | Convert to string for UI keys if needed |
+| `cameraId` | Resolve camera name from the camera list |
+| `eventType` | Map to localized title/description |
+| `eventLevel` | `1=danger`, `2=warning`, other values=`info` |
+| `createdAt` | Format as local display time |
+| no backend field | `actionLabel` is a frontend fixed label (`확인`/`상세`) |
+
+```http
+GET /api/v1/safety-events?limit=50
+GET /api/v1/safety-events/{eventId}
+```
+
+The backend currently generates `FALL_DETECTED` internally. Event acknowledgement, status changes, and external event creation are not implemented.
+
+### 14.4 Zones
+
+The frontend `CameraZone` grouping is a view model. Use `cameraId` to group backend zones and render `points` in the documented normalized 1000x600 coordinate space.
+
+```http
+GET /api/v1/zones?cameraId={cameraId}
+POST /api/v1/zones
+DELETE /api/v1/zones/{zoneId}
+```
+
+### 14.5 Authentication
+
+The frontend must call `POST /auth/login`, store `accessToken`, `refreshToken`, and `user`, send `Authorization: Bearer <accessToken>`, refresh on `401` with `POST /auth/refresh`, and clear tokens after `POST /auth/logout`. Camera and WebRTC routes currently do not enforce the auth dependency; this must be decided before production deployment.
+
+### 14.6 APIs required by current frontend screens but not implemented
+
+The recording search, AI analysis, statistics, and system-health screens currently use mock data. The following APIs are required to replace those mocks:
+
+| Feature | Proposed endpoint | Minimum response |
+|---|---|---|
+| Recording search | `GET /api/v1/recordings?cameraId=&date=&startTime=&endTime=&eventOnly=` | recording ID, camera ID, start/end time, playback URL, event data |
+| Recording playback | `GET /api/v1/recordings/{recordingId}/stream` | stream response or playback URL |
+| AI camera summary | `GET /api/v1/ai-analysis/cameras?from=&to=` | detection count, risk, last detected time per camera |
+| Recent AI events | `GET /api/v1/ai-analysis/events?from=&to=&severity=` | event list or convertible safety events |
+| Statistics summary | `GET /api/v1/statistics/summary?from=&to=` | total events, falls, average response time, camera uptime |
+| Daily event trend | `GET /api/v1/statistics/events/daily?from=&to=` | date and count pairs |
+| Event distribution | `GET /api/v1/statistics/events/distribution?from=&to=` | event type and count pairs |
+| Camera performance | `GET /api/v1/statistics/cameras?from=&to=` | events, uptime, average response time per camera |
+| System metrics | `GET /api/v1/system/health/metrics` | CPU, storage, and camera connection status |
+
+All endpoints in this subsection are planned and are not currently implemented.
+
+### 14.7 Equipment control
+
+The emergency control UI should call:
+
+```http
+POST /api/v1/equipment/stop
+POST /api/v1/equipment/slow
+POST /api/v1/equipment/resume
+```
+
+These APIs currently control a single equipment target and accept no equipment ID. Multi-equipment control requires a separate resource and request contract.
+
+### 14.8 Integration order
+
+1. Authentication and shared API client
+2. Camera list and status mapping
+3. MJPEG/WebRTC video
+4. Safety events
+5. Zones
+6. Equipment controls
+7. Recording APIs
+8. AI, statistics, and system metrics APIs
