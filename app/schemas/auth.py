@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.core.datetime_utils import UtcDatetime
 
 
 Role = Literal["ADMIN", "MANAGER", "OPERATOR"]
@@ -36,7 +37,7 @@ class UserResponse(BaseModel):
     phone_number: str = Field(serialization_alias="phoneNumber")
     department: str
     role: str
-    created_at: datetime = Field(serialization_alias="createdAt")
+    created_at: UtcDatetime = Field(serialization_alias="createdAt")
 
     model_config = ConfigDict(from_attributes=True)
 

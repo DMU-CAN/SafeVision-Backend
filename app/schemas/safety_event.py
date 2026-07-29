@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.core.datetime_utils import UtcDatetime
 
 
 class SafetyEventResponse(BaseModel):
@@ -12,6 +13,6 @@ class SafetyEventResponse(BaseModel):
     event_type: str = Field(serialization_alias="eventType")
     event_level: int = Field(serialization_alias="eventLevel")
     clip_path: Optional[str] = Field(default=None, serialization_alias="clipPath")
-    created_at: datetime = Field(serialization_alias="createdAt")
+    created_at: UtcDatetime = Field(serialization_alias="createdAt")
 
     model_config = ConfigDict(from_attributes=True)
