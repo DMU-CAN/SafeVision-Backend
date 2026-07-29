@@ -12,14 +12,26 @@ from app.services.recording_service import extract_event_clip
 def record_fall_detected_event(camera_id: int | None = None) -> None:
     detected_at = datetime.now(timezone.utc)
     print(f"[BARO][FALL_DETECTED] {detected_at.isoformat()} 넘어짐 감지됨 camera_id={camera_id}")
+    _record_event(event_type="FALL_DETECTED", event_level=2, camera_id=camera_id)
 
+
+def record_zone_intrusion_event(camera_id: int | None = None, zone_id: int | None = None) -> None:
+    detected_at = datetime.now(timezone.utc)
+    print(f"[BARO][ZONE_INTRUSION] {detected_at.isoformat()} 위험구역 접근 감지됨 camera_id={camera_id} zone_id={zone_id}")
+    _record_event(event_type="ZONE_INTRUSION", event_level=2, camera_id=camera_id, zone_id=zone_id)
+
+
+def _record_event(
+    event_type: str, event_level: int, camera_id: int | None = None, zone_id: int | None = None
+) -> None:
     event_id: int | None = None
     db = SessionLocal()
     try:
         event = SafetyEvent(
             camera_id=camera_id,
-            event_type="FALL_DETECTED",
-            event_level=2,
+            zone_id=zone_id,
+            event_type=event_type,
+            event_level=event_level,
         )
         db.add(event)
         db.commit()
@@ -27,17 +39,17 @@ def record_fall_detected_event(camera_id: int | None = None) -> None:
         event_id = event.id
     except Exception as exc:
         db.rollback()
-        print(f"[BARO][FALL_DETECTED][DB_ERROR] {exc}")
+        print(f"[BARO][{event_type}][DB_ERROR] {exc}")
     finally:
         db.close()
 
     get_motor_controller().stop()
 
     if camera_id is not None and event_id is not None:
-        threading.Thread(target=_save_event_clip, args=(camera_id, event_id), daemon=True).start()
+        threading.Thread(target=_save_event_clip, args=(camera_id, event_id, event_type), daemon=True).start()
 
 
-def _save_event_clip(camera_id: int, event_id: int) -> None:
+def _save_event_clip(camera_id: int, event_id: int, event_type: str) -> None:
     # Wait for post-roll footage to land in the rolling buffer before
     # concatenating it into a permanent clip, so the saved clip covers both
     # sides of the event, not just the moments before it.
@@ -54,6 +66,6 @@ def _save_event_clip(camera_id: int, event_id: int) -> None:
             db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"[BARO][FALL_DETECTED][CLIP_DB_ERROR] {exc}")
+        print(f"[BARO][{event_type}][CLIP_DB_ERROR] {exc}")
     finally:
         db.close()

@@ -9,8 +9,8 @@ from aiortc import VideoStreamTrack
 from av import VideoFrame
 
 from app.core.config import get_settings
-from app.services.safety_event_logger import record_fall_detected_event
-from app.services.zone_service import is_point_in_zone
+from app.services.safety_event_logger import record_fall_detected_event, record_zone_intrusion_event
+from app.services.zone_service import find_zone_for_point
 
 
 @dataclass(frozen=True)
@@ -113,6 +113,7 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         self.confidence = confidence
         self.camera_id = camera_id
         self.last_fall_event_at = 0.0
+        self.last_zone_event_at = 0.0
         self.last_inference_at = 0.0
         self.cached_detections: list[Detection] = []
 
@@ -132,6 +133,7 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             self.cached_detections = await asyncio.to_thread(detector.detect, image, self.confidence)
 
         fall_detections: list[Detection] = []
+        person_detections: list[Detection] = []
         for detection in self.cached_detections:
             torso_angle, aspect_ratio = self._pose_metrics(detection)
             is_fall = (
@@ -142,10 +144,17 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             )
             if is_fall:
                 fall_detections.append(detection)
+            if detection.class_name == "person":
+                person_detections.append(detection)
             self._draw_detection(image, detection, is_fall, torso_angle, aspect_ratio)
 
         frame_height, frame_width = image.shape[:2]
-        self._record_fall_event_if_needed(fall_detections, frame_width, frame_height)
+        # Falls are recorded everywhere, independent of danger zones — a
+        # collapse matters no matter where it happens. Zone intrusion is a
+        # separate, zone-gated signal for anyone (fallen or not) standing
+        # inside a configured danger zone.
+        self._record_fall_event_if_needed(fall_detections)
+        self._record_zone_intrusion_if_needed(person_detections, frame_width, frame_height)
 
         annotated_frame = VideoFrame.from_ndarray(image, format="bgr24")
         # Use our own monotonic timestamp for the outgoing WebRTC track
@@ -253,17 +262,8 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         keypoint = keypoints[index]
         return keypoint if keypoint.confidence >= 0.3 else None
 
-    def _record_fall_event_if_needed(
-        self, fall_detections: list[Detection], frame_width: int, frame_height: int
-    ) -> None:
+    def _record_fall_event_if_needed(self, fall_detections: list[Detection]) -> None:
         if not fall_detections:
-            return
-
-        in_zone = any(
-            is_point_in_zone(self.camera_id, *self._foot_point(detection), frame_width, frame_height)
-            for detection in fall_detections
-        )
-        if not in_zone:
             return
 
         settings = get_settings()
@@ -273,6 +273,28 @@ class YoloAnnotatedTrack(VideoStreamTrack):
 
         self.last_fall_event_at = now
         record_fall_detected_event(camera_id=self.camera_id)
+
+    def _record_zone_intrusion_if_needed(
+        self, person_detections: list[Detection], frame_width: int, frame_height: int
+    ) -> None:
+        if not person_detections:
+            return
+
+        matched_zone = None
+        for detection in person_detections:
+            matched_zone = find_zone_for_point(self.camera_id, *self._foot_point(detection), frame_width, frame_height)
+            if matched_zone is not None:
+                break
+        if matched_zone is None:
+            return
+
+        settings = get_settings()
+        now = time.monotonic()
+        if now - self.last_zone_event_at < settings.zone_intrusion_cooldown_seconds:
+            return
+
+        self.last_zone_event_at = now
+        record_zone_intrusion_event(camera_id=self.camera_id, zone_id=matched_zone.id)
 
     def _foot_point(self, detection: Detection) -> tuple[float, float]:
         x1, _, x2, y2 = detection.box

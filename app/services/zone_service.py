@@ -21,11 +21,13 @@ def _point_in_polygon(x: float, y: float, points: list[dict]) -> bool:
     return inside
 
 
-def is_point_in_zone(camera_id: int | None, frame_x: float, frame_y: float, frame_width: int, frame_height: int) -> bool:
-    """Checks whether a frame-pixel point falls inside a configured danger
-    zone for the given camera. If no zones are configured at all (for this
-    camera or globally), falls back to True so detection keeps working
-    before any zone has been set up."""
+def find_zone_for_point(
+    camera_id: int | None, frame_x: float, frame_y: float, frame_width: int, frame_height: int
+) -> Zone | None:
+    """Returns the configured danger zone (for this camera, or a global
+    zone with no camera_id) that a frame-pixel point falls inside, or None
+    if it's outside every applicable zone (including when no zones are
+    configured at all — that's "not in a zone", not "in every zone")."""
 
     norm_x = frame_x / max(frame_width, 1) * ZONE_SPACE_WIDTH
     norm_y = frame_y / max(frame_height, 1) * ZONE_SPACE_HEIGHT
@@ -33,13 +35,10 @@ def is_point_in_zone(camera_id: int | None, frame_x: float, frame_y: float, fram
     db = SessionLocal()
     try:
         zones = db.query(Zone).filter(Zone.is_active.is_(True)).all()
-        if not zones:
-            return True
-
         applicable_zones = [zone for zone in zones if zone.camera_id is None or zone.camera_id == camera_id]
-        if not applicable_zones:
-            return True
-
-        return any(_point_in_polygon(norm_x, norm_y, zone.points) for zone in applicable_zones)
+        for zone in applicable_zones:
+            if _point_in_polygon(norm_x, norm_y, zone.points):
+                return zone
+        return None
     finally:
         db.close()
