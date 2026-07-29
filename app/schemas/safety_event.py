@@ -11,6 +11,7 @@ class SafetyEventResponse(BaseModel):
     zone_id: Optional[int] = Field(serialization_alias="zoneId")
     event_type: str = Field(serialization_alias="eventType")
     event_level: int = Field(serialization_alias="eventLevel")
+    clip_path: Optional[str] = Field(default=None, serialization_alias="clipPath")
     created_at: datetime = Field(serialization_alias="createdAt")
 
     model_config = ConfigDict(from_attributes=True)

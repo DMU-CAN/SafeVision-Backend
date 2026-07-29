@@ -20,6 +20,7 @@ BackEnd/.venv/
 *.sqlite3
 *.pt
 BackEnd/baro.db
+recordings/
 
 # Environment files
 .env

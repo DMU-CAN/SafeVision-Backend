@@ -11,16 +11,28 @@ from app.api.router import api_router
 from app.api.routes.webrtc import close_all_sessions
 from app.core.config import get_settings
 from app.core.responses import error_response, success_response
-from app.db.session import Base, engine
+from app.db.session import Base, SessionLocal, engine, run_lightweight_migrations
+from app.models.camera import Camera
+from app.services.recording_service import start_recording, stop_all_recordings
 
 
 settings = get_settings()
 Base.metadata.create_all(bind=engine)
+run_lightweight_migrations()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    db = SessionLocal()
+    try:
+        for camera in db.query(Camera).all():
+            start_recording(camera.id, camera.rtsp_url)
+    finally:
+        db.close()
+
     yield
+
+    stop_all_recordings()
     await close_all_sessions()
 
 

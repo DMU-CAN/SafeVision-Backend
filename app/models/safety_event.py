@@ -15,6 +15,7 @@ class SafetyEvent(Base):
     zone_id: Mapped[int | None] = mapped_column(nullable=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     event_level: Mapped[int] = mapped_column(Integer, nullable=False)
+    clip_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreateRequest, CameraResponse, CameraUpdateRequest, StreamUrlResponse
 from app.services.camera_sources import build_camera_source
+from app.services.recording_service import start_recording, stop_recording
 
 
 router = APIRouter()
@@ -47,6 +48,7 @@ def create_camera(payload: CameraCreateRequest, db: Session = Depends(get_db)):
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    start_recording(camera.id, camera.rtsp_url)
     return success_response(data=serialize_camera(camera), message="카메라가 등록되었습니다.")
 
 
@@ -64,6 +66,9 @@ def update_camera(camera_id: int, payload: CameraUpdateRequest, db: Session = De
         setattr(camera, key, value)
     db.commit()
     db.refresh(camera)
+    if "rtsp_url" in update_data:
+        stop_recording(camera.id)
+        start_recording(camera.id, camera.rtsp_url)
     return success_response(data=serialize_camera(camera), message="카메라 정보가 수정되었습니다.")
 
 
@@ -72,6 +77,7 @@ def delete_camera(camera_id: int, db: Session = Depends(get_db)):
     camera = get_camera_or_404(camera_id, db)
     db.delete(camera)
     db.commit()
+    stop_recording(camera_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

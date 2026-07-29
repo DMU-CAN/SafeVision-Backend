@@ -113,6 +113,7 @@
 | SafetyEvent | GET | `/api/v1/safety-events` | 안전 이벤트 목록 조회 | 구현완료 |
 | SafetyEvent | POST | `/api/v1/safety-events` | 안전 이벤트 등록 | 예정 |
 | SafetyEvent | GET | `/api/v1/safety-events/{eventId}` | 안전 이벤트 상세 조회 | 구현완료 |
+| SafetyEvent | GET | `/api/v1/safety-events/{eventId}/clip` | 이벤트 영상 클립 재생 | 구현완료 |
 | MaintenanceMode | GET | `/api/v1/maintenance-modes` | 정비 모드 목록 조회 | 예정 |
 | MaintenanceMode | POST | `/api/v1/equipments/{equipmentId}/maintenance-modes` | 정비 모드 시작 | 예정 |
 | MaintenanceMode | PATCH | `/api/v1/maintenance-modes/{maintenanceModeId}/end` | 정비 모드 종료 | 예정 |
@@ -196,7 +197,29 @@ ONLINE, OFFLINE, MAINTENANCE
 | `zone_id` | BIGINT, nullable | `zoneId` | 관련 위험 구역 ID |
 | `event_type` | VARCHAR(50) | `eventType` | 이벤트 유형 |
 | `event_level` | INT | `eventLevel` | 이벤트 등급 |
+| `clip_path` | VARCHAR(255), nullable | `clipPath` | 이벤트 영상 클립의 서버 내부 상대 경로. null이면 아직 준비 중이거나(발생 직후 최대 `RECORDING_CLIP_POST_ROLL_SECONDS`초) 카메라에 녹화 버퍼가 없던 경우. 클라이언트는 이 값 유무만 보고 `GET /safety-events/{eventId}/clip` 재생 가능 여부를 판단 |
 | `created_at` | TIMESTAMP | `createdAt` | 생성 일시 |
+
+카메라별로 백엔드가 RTSP를 항상 롤링 버퍼(기본 30초 세그먼트 x 20개 = 최근 10분)로 녹화합니다. `FALL_DETECTED` 이벤트 발생 시 그 시점의 버퍼 세그먼트를 이벤트 전후 맥락이 담기도록 잘라 `recordings/clips/event_{id}.mp4`로 보존합니다(발생 후 `RECORDING_CLIP_POST_ROLL_SECONDS`초 뒤 비동기로 처리).
+
+### GET `/api/v1/safety-events/{eventId}/clip`
+
+이벤트에 연결된 영상 클립(mp4)을 반환합니다.
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+
+#### Response 200
+
+`Content-Type: video/mp4` 바이너리 스트림.
+
+#### Errors
+
+| Status | Code | 설명 |
+|---:|---|---|
+| 404 | `SAFETY_EVENT_NOT_FOUND` | 해당 eventId의 이벤트 없음 |
+| 404 | `CLIP_NOT_READY` | 이벤트는 있지만 클립이 아직 저장되지 않음 |
+| 404 | `CLIP_NOT_FOUND` | `clipPath`는 있지만 실제 파일이 없음 |
 
 ### 5.6 maintenance_modes
 
@@ -920,7 +943,7 @@ The WebRTC request body is `{ "sdp": string, "type": "offer", "cameraId": number
 
 ### 14.3 Safety event mapping
 
-Backend events contain `id`, `cameraId`, `equipmentId`, `zoneId`, `eventType`, `eventLevel`, and `createdAt`. The frontend display model (`severity`, `title`, `description`, `meta`, `actionLabel`) is a view model and must be built by the frontend:
+Backend events contain `id`, `cameraId`, `equipmentId`, `zoneId`, `eventType`, `eventLevel`, `clipPath`, and `createdAt`. The frontend display model (`severity`, `title`, `description`, `meta`, `actionLabel`) is a view model and must be built by the frontend:
 
 | Backend | Frontend rule |
 |---|---|
@@ -928,8 +951,11 @@ Backend events contain `id`, `cameraId`, `equipmentId`, `zoneId`, `eventType`, `
 | `cameraId` | Resolve camera name from the camera list |
 | `eventType` | Map to localized title/description |
 | `eventLevel` | `1=danger`, `2=warning`, other values=`info` |
+| `clipPath` | Presence (non-null) means `GET /safety-events/{id}/clip` is playable; null means not ready yet or unavailable |
 | `createdAt` | Format as local display time |
 | no backend field | `actionLabel` is a frontend fixed label (`확인`/`상세`) |
+
+Clicking an event with a non-null `clipPath` should play `GET /api/v1/safety-events/{eventId}/clip` (returns `video/mp4`) — this covers roughly the last 10 minutes before the event plus a short post-roll, not just the instant of detection.
 
 ```http
 GET /api/v1/safety-events?limit=50

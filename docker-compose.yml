@@ -6,6 +6,7 @@ services:
       - /dev/hailo0:/dev/hailo0
     volumes:
       - ./baro.db:/app/baro.db
+      - ./recordings:/app/recordings
     environment:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8080
