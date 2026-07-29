@@ -1,8 +1,7 @@
 services:
   backend:
     build: .
-    ports:
-      - "8080:8080"
+    network_mode: host
     devices:
       - /dev/hailo0:/dev/hailo0
     volumes:
