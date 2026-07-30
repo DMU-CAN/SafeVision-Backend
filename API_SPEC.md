@@ -107,6 +107,10 @@
 | Equipment | POST | `/api/v1/equipment/stop` | 설비 정지 명령 전송 | 구현완료 |
 | Equipment | POST | `/api/v1/equipment/slow` | 설비 감속 명령 전송 | 구현완료 |
 | Equipment | POST | `/api/v1/equipment/resume` | 설비 재가동 명령 전송 | 구현완료 |
+| Equipment | GET | `/api/v1/equipments` | 다중 설비 목록 조회 | 구현완료 |
+| Equipment | POST | `/api/v1/equipments` | 다중 설비 등록 | 구현완료 |
+| Equipment | GET/PUT/DELETE | `/api/v1/equipments/{equipmentId}` | 다중 설비 상세/수정/삭제 | 구현완료 |
+| Equipment | POST | `/api/v1/equipments/{equipmentId}/stop` \| `/slow` \| `/resume` | 설비별 제어 명령 전송 | 구현완료 |
 | Zone | GET | `/api/v1/zones` | 위험 구역 목록 조회 | 구현완료 |
 | Zone | POST | `/api/v1/zones` | 위험 구역 등록 | 구현완료 |
 | Zone | DELETE | `/api/v1/zones/{zoneId}` | 위험 구역 삭제 | 구현완료 |
@@ -1012,21 +1016,49 @@ body 없음.
 
 요청/응답 형태는 `contact`와 동일 (`data.shared`, `message`: "현장 상황을 공유했습니다.")
 
+## 11.7 Equipment (DB 리소스, 다중 설비 제어)
+
+11장의 `/equipment/*`는 설비 1대만 가정한 전역 명령 API이고(하위 호환용으로 계속 유지), 아래는 여러 설비를 등록해 각각 구분 제어하는 API입니다. 실제 라우터 파일: `app/api/routes/equipments.py`, prefix `/api/v1/equipments`.
+
+`controlProtocol`: `SERIAL`(백엔드 호스트의 시리얼 포트, 예: `/dev/ttyACM0`, STOP/SLOW/RESUME 텍스트 라인 전송) 또는 `NETWORK`(로봇과 동일한 방식으로 `host:port`에 JSON POST). 장치가 꺼져있거나 응답 없어도 에러 없이 `sent: false` 반환.
+
+### GET `/api/v1/equipments` / POST `/api/v1/equipments`
+
+#### Request Body (POST)
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `name` | string | Y | 설비 이름 |
+| `controlProtocol` | string | Y | `SERIAL` \| `NETWORK` |
+| `controlAddress` | string | Y | `SERIAL`이면 포트 경로, `NETWORK`면 `host:port` |
+
+#### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1, "name": "컨베이어-1",
+    "controlProtocol": "SERIAL", "controlAddress": "/dev/ttyACM0",
+    "updatedAt": "2026-07-30T12:00:00Z"
+  },
+  "message": "요청이 정상 처리되었습니다."
+}
+```
+
+### GET/PUT/DELETE `/api/v1/equipments/{equipmentId}`
+
+카메라/로봇 CRUD와 동일한 패턴.
+
+### POST `/api/v1/equipments/{equipmentId}/stop` | `/slow` | `/resume`
+
+```json
+{ "success": true, "data": { "sent": true }, "message": "설비 정지 명령을 전송했습니다." }
+```
+
 ## 12. 구현 예정 API
 
 아래 API는 ERD 기준으로 필요한 항목이지만 현재 백엔드 코드에는 아직 구현되어 있지 않습니다.
-
-### 12.1 Equipment (DB 리소스)
-
-위 11장의 `/equipment/*`는 단일 설비를 가정한 명령 전송 API이고, 아래는 여러 설비를 등록/구분 관리하기 위한 별도의 CRUD API입니다.
-
-| Method | Path | 설명 |
-|---|---|---|
-| GET | `/api/v1/equipments` | 장비 목록 조회 |
-| POST | `/api/v1/equipments` | 장비 등록 |
-| GET | `/api/v1/equipments/{equipmentId}` | 장비 상세 조회 |
-| PUT | `/api/v1/equipments/{equipmentId}` | 장비 정보 수정 |
-| DELETE | `/api/v1/equipments/{equipmentId}` | 장비 삭제 |
 
 ### 12.2 SafetyEvent 등록
 
@@ -1052,7 +1084,7 @@ body 없음.
 |---|---|---|
 | `users` | 구현완료 | 회원가입/로그인에서 사용. 프론트는 아직 미연동 |
 | `cameras` | 구현완료 | 카메라 등록, MJPEG 스트리밍, WebRTC RTSP 연결에서 사용 |
-| `equipments`(DB 리소스) | 예정 | 다중 설비 관리 기능 구현 시 추가 필요. 단일 설비 제어 명령(`/equipment/stop` 등)은 이미 구현되어 있으며 이 테이블과 무관 |
+| `equipments`(DB 리소스) | 구현완료 | 다중 설비 등록/구분 제어(`SERIAL`/`NETWORK`) 지원. 단일 설비 제어 명령(`/equipment/stop` 등)은 하위 호환용으로 별도 유지, 이 테이블과 무관 |
 | `zones`(ERD상 `danger_zones`) | 구현완료 | 위험 구역 좌표 등록/조회/삭제 API 제공 |
 | `safety_events` | 구현됨(등록 API 제외) | YOLO Pose 넘어짐 감지 시 `FALL_DETECTED` 이벤트 저장, 목록/상세 조회 API 제공. 외부에서 이벤트를 등록하는 API는 없음 |
 | `maintenance_modes` | 예정 | 정비 모드/제어 잠금 기능 구현 시 추가 필요 |
