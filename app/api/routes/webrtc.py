@@ -2,11 +2,12 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import get_settings
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
@@ -25,6 +26,24 @@ class WebRTCSession:
 
 
 active_sessions: dict[str, WebRTCSession] = {}
+
+
+def build_peer_connection() -> RTCPeerConnection:
+    settings = get_settings()
+    if not settings.turn_enabled:
+        return RTCPeerConnection()
+
+    return RTCPeerConnection(
+        configuration=RTCConfiguration(
+            iceServers=[
+                RTCIceServer(
+                    urls=settings.turn_url,
+                    username=settings.turn_username,
+                    credential=settings.turn_credential,
+                )
+            ]
+        )
+    )
 
 
 async def close_session(session_id: str) -> None:
@@ -65,7 +84,7 @@ def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSou
 @router.post("/offer")
 async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depends(get_db)):
     session_id = str(uuid.uuid4())
-    peer_connection = RTCPeerConnection()
+    peer_connection = build_peer_connection()
 
     try:
         camera_source = resolve_camera_source(payload, db)

@@ -1,0 +1,22 @@
+realm=safevision
+server-name=safevision
+fingerprint
+lt-cred-mech
+
+# TCP-only TURN for networks where UDP is blocked. Forward 3478/TCP and the
+# relay range below on the router/firewall.
+listening-port=3478
+no-udp
+no-tls
+no-dtls
+min-port=50000
+max-port=50100
+
+# Replace this in the real turnserver.conf. Do not commit the real file.
+user=safevision:change-this-password
+
+no-cli
+no-loopback-peers
+no-multicast-peers
+log-file=stdout
+verbose

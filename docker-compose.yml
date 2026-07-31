@@ -12,6 +12,10 @@ services:
       - BACKEND_PORT=8080
       - YOLO_MODEL_PATH=models/yolo11n-pose_hailo_model
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://192.168.31.83:5173,http://safevision.kro.kr,http://115.0.198.253
+      - TURN_ENABLED=${TURN_ENABLED:-false}
+      - TURN_URL=${TURN_URL:-turn:safevision.kro.kr:3478?transport=tcp}
+      - TURN_USERNAME=${TURN_USERNAME:-safevision}
+      - TURN_CREDENTIAL=${TURN_CREDENTIAL:-change-this-password}
     restart: unless-stopped
 
   mediamtx:
@@ -19,4 +23,12 @@ services:
     network_mode: host
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
+    restart: unless-stopped
+
+  coturn:
+    image: instrumentisto/coturn:latest
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
     restart: unless-stopped

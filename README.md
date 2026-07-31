@@ -193,6 +193,36 @@ YOLO 객체 탐지를 켜려면 source에 `yoloEnabled`를 추가합니다.
 기본값이 `YOLO_ENABLED=true`라서 프론트에서 `yoloEnabled`를 보내지 않아도 WebRTC 영상에 YOLO overlay가 적용됩니다.
 특정 요청에서 끄려면 `source.yoloEnabled`를 `false`로 보내면 됩니다.
 
+### 7.2 TURN/coturn으로 외부 WebRTC 연결 우회
+
+브라우저와 백엔드가 서로 NAT/방화벽 뒤에 있어 WebRTC ICE 연결이 실패하는
+환경에서는 coturn을 TCP relay로 사용합니다.
+
+1. `turnserver.conf.example`을 `turnserver.conf`로 복사하고
+   `user=safevision:<비밀번호>`를 실제 값으로 바꿉니다.
+2. `.env`에 같은 값을 설정합니다.
+   ```env
+   TURN_ENABLED=true
+   TURN_URL=turn:safevision.kro.kr:3478?transport=tcp
+   TURN_USERNAME=safevision
+   TURN_CREDENTIAL=<비밀번호>
+   ```
+3. 라우터/방화벽에서 메인 백엔드 서버로 아래 TCP 포트를 포워딩합니다.
+   ```text
+   3478/TCP
+   50000-50100/TCP
+   ```
+4. 프론트엔드 `.env`에도 같은 TURN 값을 설정하고 다시 빌드/배포합니다.
+   ```env
+   VITE_TURN_ENABLED=true
+   VITE_TURN_URL=turn:safevision.kro.kr:3478?transport=tcp
+   VITE_TURN_USERNAME=safevision
+   VITE_TURN_CREDENTIAL=<비밀번호>
+   ```
+5. `docker compose up -d coturn backend` 또는 전체 compose 재시작 후,
+   브라우저 `chrome://webrtc-internals`에서 selected candidate pair가
+   `relay`로 잡히는지 확인합니다.
+
 ## 8. Git 업로드 제외 권장 항목
 
 아래 항목은 저장소에 올리지 않는 것을 권장합니다.

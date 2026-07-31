@@ -29,6 +29,9 @@ BackEnd/.env
 # Per-server secret (real publish password) — see mediamtx.yml.example
 mediamtx.yml
 
+# Per-server TURN secret — see turnserver.conf.example
+turnserver.conf
+
 # Frontend dependencies/build output
 node_modules/
 FrontEnd/node_modules/

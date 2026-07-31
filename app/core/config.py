@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     recording_segment_seconds: int = 30
     recording_buffer_segment_count: int = 60
     recording_clip_post_roll_seconds: int = 30
+    turn_enabled: bool = False
+    turn_url: str = "turn:safevision.kro.kr:3478?transport=tcp"
+    turn_username: str = "safevision"
+    turn_credential: str = "change-this-password"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
