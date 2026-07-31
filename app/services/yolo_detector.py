@@ -1,52 +1,21 @@
 import asyncio
-import math
 import time
-from dataclasses import dataclass
 from functools import lru_cache
 
-import cv2
 from aiortc import VideoStreamTrack
 from av import VideoFrame
 
 from app.core.config import get_settings
+from app.services.detection_types import Detection, Keypoint
+from app.services.fall_detection import is_fall_detection, pose_metrics
 from app.services.safety_event_logger import (
     record_camera_drift_event,
     record_fall_detected_event,
     record_zone_intrusion_event,
 )
+from app.services.yolo_annotation import draw_detection
 from app.services.zone_calibration import check_and_correct_drift
 from app.services.zone_service import find_zone_for_point
-
-
-@dataclass(frozen=True)
-class Keypoint:
-    x: float
-    y: float
-    confidence: float
-
-
-@dataclass(frozen=True)
-class Detection:
-    box: list[float]
-    class_name: str
-    confidence: float
-    keypoints: list[Keypoint]
-
-
-POSE_CONNECTIONS = [
-    (5, 6),
-    (5, 7),
-    (7, 9),
-    (6, 8),
-    (8, 10),
-    (5, 11),
-    (6, 12),
-    (11, 12),
-    (11, 13),
-    (13, 15),
-    (12, 14),
-    (14, 16),
-]
 
 
 class YoloDetector:
@@ -150,18 +119,13 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         fall_detections: list[Detection] = []
         person_detections: list[Detection] = []
         for detection in self.cached_detections:
-            torso_angle, aspect_ratio = self._pose_metrics(detection)
-            is_fall = (
-                detection.class_name == "person"
-                and torso_angle is not None
-                and torso_angle >= settings.fall_pose_angle_threshold
-                and aspect_ratio >= settings.fall_aspect_ratio_threshold
-            )
+            torso_angle, aspect_ratio = pose_metrics(detection)
+            is_fall = is_fall_detection(detection, torso_angle, aspect_ratio)
             if is_fall:
                 fall_detections.append(detection)
             if detection.class_name == "person":
                 person_detections.append(detection)
-            self._draw_detection(image, detection, is_fall, torso_angle, aspect_ratio)
+            draw_detection(image, detection, is_fall, torso_angle, aspect_ratio)
 
         frame_height, frame_width = image.shape[:2]
         # Falls are recorded everywhere, independent of danger zones — a
@@ -178,104 +142,6 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         # aiortc's encoder and result in a black/undecodable output.
         annotated_frame.pts, annotated_frame.time_base = await self.next_timestamp()
         return annotated_frame
-
-    def _draw_detection(
-        self,
-        image,
-        detection: Detection,
-        is_fall: bool,
-        torso_angle: float | None,
-        aspect_ratio: float | None,
-    ) -> None:
-        x1, y1, x2, y2 = [int(value) for value in detection.box]
-        color = (0, 0, 255) if is_fall else (0, 255, 0)
-        label = f"FALL {detection.confidence:.2f}" if is_fall else f"{detection.class_name} {detection.confidence:.2f}"
-
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(
-            image,
-            label,
-            (x1, max(y1 - 8, 20)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
-
-        if detection.class_name == "person":
-            settings = get_settings()
-            angle_text = f"{torso_angle:.0f}deg" if torso_angle is not None else "n/a"
-            ratio_text = f"{aspect_ratio:.2f}" if aspect_ratio is not None else "n/a"
-            debug_text = (
-                f"angle {angle_text}/{settings.fall_pose_angle_threshold:.0f} "
-                f"ratio {ratio_text}/{settings.fall_aspect_ratio_threshold:.2f}"
-            )
-            cv2.putText(
-                image,
-                debug_text,
-                (x1, min(y2 + 20, image.shape[0] - 8)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
-
-        self._draw_pose(image, detection.keypoints, color)
-
-    def _draw_pose(self, image, keypoints: list[Keypoint], color) -> None:
-        for start_index, end_index in POSE_CONNECTIONS:
-            if start_index >= len(keypoints) or end_index >= len(keypoints):
-                continue
-            start = keypoints[start_index]
-            end = keypoints[end_index]
-            if start.confidence < 0.3 or end.confidence < 0.3:
-                continue
-            cv2.line(image, (int(start.x), int(start.y)), (int(end.x), int(end.y)), color, 2, cv2.LINE_AA)
-
-        for point in keypoints:
-            if point.confidence >= 0.3:
-                cv2.circle(image, (int(point.x), int(point.y)), 3, color, -1, cv2.LINE_AA)
-
-    def _pose_metrics(self, detection: Detection) -> tuple[float | None, float | None]:
-        x1, y1, x2, y2 = detection.box
-        width = max(x2 - x1, 1.0)
-        height = max(y2 - y1, 1.0)
-        aspect_ratio = width / height
-
-        if detection.class_name != "person" or not get_settings().fall_detection_enabled:
-            return None, aspect_ratio
-
-        torso_angle = self._torso_angle_from_vertical(detection.keypoints)
-        return torso_angle, aspect_ratio
-
-    def _torso_angle_from_vertical(self, keypoints: list[Keypoint]) -> float | None:
-        left_shoulder = self._visible_keypoint(keypoints, 5)
-        right_shoulder = self._visible_keypoint(keypoints, 6)
-        left_hip = self._visible_keypoint(keypoints, 11)
-        right_hip = self._visible_keypoint(keypoints, 12)
-
-        if not all([left_shoulder, right_shoulder, left_hip, right_hip]):
-            return None
-
-        shoulder_x = (left_shoulder.x + right_shoulder.x) / 2
-        shoulder_y = (left_shoulder.y + right_shoulder.y) / 2
-        hip_x = (left_hip.x + right_hip.x) / 2
-        hip_y = (left_hip.y + right_hip.y) / 2
-        dx = hip_x - shoulder_x
-        dy = hip_y - shoulder_y
-
-        if abs(dx) < 1 and abs(dy) < 1:
-            return None
-
-        return abs(math.degrees(math.atan2(dx, dy)))
-
-    def _visible_keypoint(self, keypoints: list[Keypoint], index: int) -> Keypoint | None:
-        if index >= len(keypoints):
-            return None
-        keypoint = keypoints[index]
-        return keypoint if keypoint.confidence >= 0.3 else None
 
     def _record_fall_event_if_needed(self, fall_detections: list[Detection]) -> None:
         if not fall_detections:

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
@@ -11,7 +12,7 @@ from app.models.safety_event import SafetyEvent
 from app.schemas.safety_event import SafetyEventResponse
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def serialize_event(event: SafetyEvent) -> dict:

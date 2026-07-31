@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
@@ -21,6 +22,7 @@ from app.services.robot_controller import send_robot_command
 
 
 router = APIRouter()
+protected = [Depends(get_current_user)]
 
 
 def serialize_robot(robot: Robot) -> dict:
@@ -41,13 +43,13 @@ def get_robot_or_404(robot_id: int, db: Session) -> Robot:
     return robot
 
 
-@router.get("")
+@router.get("", dependencies=protected)
 def list_robots(db: Session = Depends(get_db)):
     robots = db.scalars(select(Robot).order_by(Robot.id.desc())).all()
     return success_response(data={"items": [serialize_robot(robot) for robot in robots]})
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=protected)
 def create_robot(payload: RobotCreateRequest, db: Session = Depends(get_db)):
     robot = Robot(
         name=payload.name,
@@ -86,12 +88,12 @@ def register_robot(payload: RobotRegisterRequest, db: Session = Depends(get_db))
     return success_response(data=serialize_robot(robot), message=message)
 
 
-@router.get("/{robot_id}")
+@router.get("/{robot_id}", dependencies=protected)
 def get_robot(robot_id: int, db: Session = Depends(get_db)):
     return success_response(data=serialize_robot(get_robot_or_404(robot_id, db)))
 
 
-@router.put("/{robot_id}")
+@router.put("/{robot_id}", dependencies=protected)
 def update_robot(robot_id: int, payload: RobotUpdateRequest, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
     for key, value in payload.model_dump(exclude_unset=True).items():
@@ -101,7 +103,7 @@ def update_robot(robot_id: int, payload: RobotUpdateRequest, db: Session = Depen
     return success_response(data=serialize_robot(robot), message="로봇 정보가 수정되었습니다.")
 
 
-@router.delete("/{robot_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{robot_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=protected)
 def delete_robot(robot_id: int, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
     db.delete(robot)
@@ -109,14 +111,14 @@ def delete_robot(robot_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{robot_id}/ptz")
+@router.post("/{robot_id}/ptz", dependencies=protected)
 def send_ptz_command(robot_id: int, payload: RobotPtzRequest, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
     sent = send_robot_command(robot.control_address, {"type": "ptz", "direction": payload.direction})
     return success_response(data={"sent": sent}, message="PTZ 명령을 전송했습니다.")
 
 
-@router.post("/{robot_id}/dispatch", status_code=status.HTTP_201_CREATED)
+@router.post("/{robot_id}/dispatch", status_code=status.HTTP_201_CREATED, dependencies=protected)
 def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
 
@@ -147,7 +149,7 @@ def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = D
     return success_response(data=serialize_dispatch(dispatch), message="로봇을 출동시켰습니다.")
 
 
-@router.get("/{robot_id}/dispatches")
+@router.get("/{robot_id}/dispatches", dependencies=protected)
 def list_dispatches(robot_id: int, db: Session = Depends(get_db)):
     get_robot_or_404(robot_id, db)
     dispatches = (

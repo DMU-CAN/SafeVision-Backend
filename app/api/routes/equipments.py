@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.equipment import Equipment
@@ -9,7 +10,7 @@ from app.schemas.equipment import EquipmentCreateRequest, EquipmentResponse, Equ
 from app.services.equipment_controller import send_equipment_command
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def serialize_equipment(equipment: Equipment) -> dict:

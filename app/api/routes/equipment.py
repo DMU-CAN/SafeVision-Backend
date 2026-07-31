@@ -1,10 +1,11 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.deps import get_current_user
 from app.core.responses import success_response
 from app.services.motor_controller import get_motor_controller
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.post("/stop")

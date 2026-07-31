@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.zone import Zone
 from app.schemas.zone import ZoneCreate, ZoneResponse
 from app.services.zone_calibration import capture_frame_from_buffer, has_reference_frame, save_reference_frame
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def serialize_zone(zone: Zone) -> dict:

@@ -6,6 +6,7 @@ from aiortc import RTCPeerConnection, RTCSessionDescription
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
@@ -14,7 +15,7 @@ from app.schemas.webrtc import WebRTCAnswerResponse, WebRTCOfferRequest, WebRTCS
 from app.services.camera_sources import CameraSource, RtspCameraSource, build_camera_source
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @dataclass

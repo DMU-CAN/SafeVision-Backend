@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.responses import error_response, success_response
+from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreateRequest, CameraResponse, CameraUpdateRequest, StreamUrlResponse
@@ -16,7 +17,7 @@ from app.services.camera_sources import build_camera_source
 from app.services.recording_service import build_timeshift_clip, start_recording, stop_recording
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def serialize_camera(camera: Camera) -> dict:

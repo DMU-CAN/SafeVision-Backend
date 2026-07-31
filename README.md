@@ -107,6 +107,21 @@ BackEnd/
 ERD 기준의 `equipments`, `danger_zones`, `maintenance_modes`는 추후 기능 구현 시 SQLAlchemy model과 route를 추가해야 합니다.
 `safety_events`는 YOLO Pose 넘어짐 감지 이력 저장과 조회 API까지 부분 구현되어 있습니다.
 
+### 6.1 Lightweight migration 규칙
+
+현재 프로젝트는 Alembic을 아직 사용하지 않고, `app/db/session.py`의
+`run_lightweight_migrations()`에서 이미 배포된 SQLite 테이블에 필요한
+신규 컬럼만 보수적으로 추가합니다.
+
+- 새 nullable 컬럼을 추가할 때는 `_PENDING_COLUMNS`에
+  `("column_name", "SQL_TYPE")` 형식으로 등록합니다.
+- 기존 row가 있는 테이블에 `NOT NULL` 컬럼을 추가해야 한다면 SQLite
+  제약 때문에 반드시 `DEFAULT`를 함께 지정합니다.
+- UNIQUE 제약처럼 SQLite `ALTER TABLE ADD COLUMN`으로 처리하기 어려운
+  변경은 별도 guarded SQL(`CREATE INDEX IF NOT EXISTS` 등)로 추가합니다.
+- 테이블 이름 변경, 컬럼 삭제, 데이터 변환, 복잡한 제약조건 변경이
+  필요해지는 시점에는 Alembic 도입을 별도 작업으로 진행합니다.
+
 ## 7. WebRTC 영상 소스
 
 WebRTC 관련 코드는 아래 파일에 있습니다.

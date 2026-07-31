@@ -1,14 +1,29 @@
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.config import get_settings
+
+
+@dataclass
+class RecorderState:
+    camera_id: int
+    rtsp_url: str
+    process: subprocess.Popen
+    started_at: float
+    last_exit_code: int | None = None
+
+    @property
+    def is_alive(self) -> bool:
+        return self.process.poll() is None
+
 
 # Keyed by camera_id. Each recorder is a plain ffmpeg subprocess writing a
 # rolling ring of segment files for that camera — independent of whether
 # anyone is watching the WebRTC/MJPEG stream, so "last N minutes" is always
 # available regardless of viewer activity.
-_recorders: dict[int, subprocess.Popen] = {}
+_recorders: dict[int, RecorderState] = {}
 
 
 def _buffer_dir(camera_id: int) -> Path:
@@ -24,8 +39,11 @@ def _timeshift_dir() -> Path:
 
 
 def start_recording(camera_id: int, rtsp_url: str) -> None:
-    if camera_id in _recorders and _recorders[camera_id].poll() is None:
-        return
+    recorder = _recorders.get(camera_id)
+    if recorder is not None:
+        if recorder.is_alive:
+            return
+        recorder.last_exit_code = recorder.process.poll()
 
     settings = get_settings()
     buffer_dir = _buffer_dir(camera_id)
@@ -42,17 +60,26 @@ def start_recording(camera_id: int, rtsp_url: str) -> None:
         str(buffer_dir / "seg_%03d.mp4"),
     ]
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    _recorders[camera_id] = process
+    _recorders[camera_id] = RecorderState(
+        camera_id=camera_id,
+        rtsp_url=rtsp_url,
+        process=process,
+        started_at=time.time(),
+        last_exit_code=recorder.last_exit_code if recorder is not None else None,
+    )
 
 
 def stop_recording(camera_id: int) -> None:
-    process = _recorders.pop(camera_id, None)
-    if process and process.poll() is None:
-        process.terminate()
+    recorder = _recorders.pop(camera_id, None)
+    if recorder and recorder.is_alive:
+        recorder.process.terminate()
         try:
-            process.wait(timeout=5)
+            recorder.process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            recorder.process.kill()
+            recorder.process.wait(timeout=5)
+    if recorder:
+        recorder.last_exit_code = recorder.process.poll()
 
 
 def stop_all_recordings() -> None:

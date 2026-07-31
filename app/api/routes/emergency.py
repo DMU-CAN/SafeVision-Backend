@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.deps import get_current_user
 from app.core.responses import success_response
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 class EmergencyRequest(BaseModel):
