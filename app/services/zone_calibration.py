@@ -13,17 +13,17 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 # Lucas-Kanade optical flow, then apply a partial affine transform to zones.
 # This avoids the wild perspective warping that whole-frame ORB homography can
 # produce in low-texture scenes.
-AUTO_CORRECT_LIMIT_PX = 350.0
+AUTO_CORRECT_LIMIT_PX = 180.0
 FLAG_LIMIT_PX = 1200.0
-MAX_TRACK_POINTS = 160
+MAX_TRACK_POINTS = 100
 MIN_TRACKED_POINTS = 8
-MAX_FLOW_ERROR = 55.0
-MIN_AFFINE_INLIER_RATIO = 0.35
+MAX_FLOW_ERROR = 38.0
+MIN_AFFINE_INLIER_RATIO = 0.45
 MAX_SCALE_CHANGE_RATIO = 2.0
 DRIFT_IGNORE_LIMIT_PX = 5.0
-LK_WINDOW_SIZE = (61, 61)
-LK_PYRAMID_LEVELS = 4
-RANSAC_REPROJ_THRESHOLD = 14.0
+LK_WINDOW_SIZE = (41, 41)
+LK_PYRAMID_LEVELS = 3
+RANSAC_REPROJ_THRESHOLD = 8.0
 
 
 def _reference_path(camera_id: int) -> Path:
@@ -70,7 +70,7 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
         reference_gray,
         maxCorners=MAX_TRACK_POINTS,
         qualityLevel=0.01,
-        minDistance=12,
+        minDistance=18,
         blockSize=7,
     )
     if reference_points is None or len(reference_points) < MIN_TRACKED_POINTS:
@@ -84,7 +84,7 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
         None,
         winSize=LK_WINDOW_SIZE,
         maxLevel=LK_PYRAMID_LEVELS,
-        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 40, 0.01),
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
     )
     if current_points is None or status is None or errors is None:
         return None, "optical flow failed"
@@ -100,7 +100,7 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
         dst_points,
         method=cv2.RANSAC,
         ransacReprojThreshold=RANSAC_REPROJ_THRESHOLD,
-        maxIters=3000,
+        maxIters=2000,
         confidence=0.98,
     )
     inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
@@ -188,8 +188,11 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px flagged")
         return True
 
+    if drift > AUTO_CORRECT_LIMIT_PX:
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px too large for auto-correction")
+        return True
+
     print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px correcting zones")
     _apply_correction(camera_id, affine, frame_width, frame_height)
-    if drift <= AUTO_CORRECT_LIMIT_PX:
-        save_reference_frame(camera_id, current_bgr)  # adopt the corrected framing as the new baseline
+    save_reference_frame(camera_id, current_bgr)  # adopt the corrected framing as the new baseline
     return False
