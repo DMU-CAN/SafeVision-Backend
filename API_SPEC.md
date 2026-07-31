@@ -100,6 +100,7 @@
 | Camera | PUT | `/api/v1/cameras/{cameraId}` | 카메라 정보 수정 | 구현완료 |
 | Camera | DELETE | `/api/v1/cameras/{cameraId}` | 카메라 삭제 | 구현완료 |
 | Camera | GET | `/api/v1/cameras/{cameraId}/stream-url` | 카메라 RTSP URL 조회 | 구현완료 |
+| Camera | GET | `/api/v1/cameras/{cameraId}/timeshift` | 과거 최대 30분 영상(mp4) 조회 | 구현완료 |
 | WebRTC | GET | `/api/v1/webrtc/sources` | 영상 소스 어댑터 목록 조회 | 구현완료 |
 | WebRTC | POST | `/api/v1/webrtc/offer` | SDP offer를 받아 SDP answer 생성 | 구현완료 |
 | WebRTC | GET | `/api/v1/webrtc/sessions/{sessionId}` | WebRTC 세션 상태 조회 | 구현완료 |
@@ -585,6 +586,25 @@ CCTV/RTSP 카메라 정보를 등록합니다.
 #### Response 204
 
 body 없음.
+
+### GET `/api/v1/cameras/{cameraId}/timeshift`
+
+카메라의 롤링 녹화 버퍼(기본 30분, `RECORDING_BUFER_SEGMENT_COUNT * RECORDING_SEGMENT_SECONDS`)에서 `minutesAgo`분 전부터 지금까지의 영상을 즉석에서 이어붙여 mp4로 반환합니다. 접속 시점과 무관하게 항상 "최근 최대 30분"을 되돌려볼 수 있도록 하기 위한 용도이며, 요청마다 새로 생성됩니다(캐시 안 함).
+
+- 인증: 현재 미적용
+- 상태: 구현완료
+- Query: `minutesAgo`(number, 0보다 크고 30 이하, 필수) — 몇 분 전 시점부터 볼지
+
+#### Response 200
+
+`Content-Type: video/mp4` 바이너리 스트림.
+
+#### Errors
+
+| Status | Code | 설명 |
+|---:|---|---|
+| 404 | `CAMERA_NOT_FOUND` | 해당 카메라 없음 |
+| 404 | `TIMESHIFT_NOT_AVAILABLE` | 요청한 시점의 녹화 영상이 아직 없음(카메라 등록 직후 등) |
 
 ### GET `/api/v1/cameras/{cameraId}/stream-url`
 

@@ -1,17 +1,19 @@
 import asyncio
+from pathlib import Path
 
 import cv2
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreateRequest, CameraResponse, CameraUpdateRequest, StreamUrlResponse
 from app.services.camera_sources import build_camera_source
-from app.services.recording_service import start_recording, stop_recording
+from app.services.recording_service import build_timeshift_clip, start_recording, stop_recording
 
 
 router = APIRouter()
@@ -81,6 +83,27 @@ def delete_camera(camera_id: int, db: Session = Depends(get_db)):
     db.commit()
     stop_recording(camera_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{camera_id}/timeshift")
+def get_camera_timeshift(
+    camera_id: int,
+    minutes_ago: float = Query(alias="minutesAgo", gt=0, le=30),
+    db: Session = Depends(get_db),
+):
+    """Returns an mp4 covering from `minutesAgo` minutes back up to now, cut
+    from this camera's rolling recording buffer — lets the playback bar seek
+    anywhere in the last up-to-30-minutes regardless of when the viewer
+    connected. Regenerated fresh on every call, not cached."""
+    get_camera_or_404(camera_id, db)
+    relative_path = build_timeshift_clip(camera_id, minutes_ago)
+    if not relative_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response("TIMESHIFT_NOT_AVAILABLE", "요청한 시점의 녹화 영상이 아직 없습니다."),
+        )
+    file_path = Path(get_settings().recordings_dir) / relative_path
+    return FileResponse(file_path, media_type="video/mp4")
 
 
 @router.get("/{camera_id}/stream-url")

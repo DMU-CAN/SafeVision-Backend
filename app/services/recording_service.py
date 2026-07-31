@@ -1,4 +1,5 @@
 import subprocess
+import time
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -16,6 +17,10 @@ def _buffer_dir(camera_id: int) -> Path:
 
 def _clips_dir() -> Path:
     return Path(get_settings().recordings_dir) / "clips"
+
+
+def _timeshift_dir() -> Path:
+    return Path(get_settings().recordings_dir) / "timeshift"
 
 
 def start_recording(camera_id: int, rtsp_url: str) -> None:
@@ -87,3 +92,45 @@ def extract_event_clip(camera_id: int, event_id: int) -> str | None:
         concat_list.unlink(missing_ok=True)
 
     return f"clips/{clip_filename}" if clip_path.exists() else None
+
+
+def build_timeshift_clip(camera_id: int, minutes_ago: float) -> str | None:
+    """Concatenates whatever buffer segments fall within the requested
+    look-back window into a scratch file, regenerated fresh on every call
+    (not a permanent recording like extract_event_clip) — this is what lets
+    the "how far back can I scrub" playback bar work regardless of when a
+    viewer connects, up to however much the rolling buffer currently holds
+    (recording_buffer_segment_count * recording_segment_seconds)."""
+    buffer_dir = _buffer_dir(camera_id)
+    if not buffer_dir.exists():
+        return None
+
+    all_segments = sorted(buffer_dir.glob("seg_*.mp4"), key=lambda path: path.stat().st_mtime)
+    if not all_segments:
+        return None
+
+    cutoff = time.time() - minutes_ago * 60
+    segments = [segment for segment in all_segments if segment.stat().st_mtime >= cutoff]
+    if not segments:
+        segments = all_segments[-1:]  # requested window is older than the whole buffer — best effort
+
+    timeshift_dir = _timeshift_dir()
+    timeshift_dir.mkdir(parents=True, exist_ok=True)
+    output_filename = f"camera_{camera_id}.mp4"
+    output_path = timeshift_dir / output_filename
+    concat_list = timeshift_dir / f"camera_{camera_id}.txt"
+
+    concat_list.write_text("".join(f"file '{segment.resolve()}'\n" for segment in segments))
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-loglevel", "warning", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                "-c", "copy", str(output_path),
+            ],
+            check=False,
+        )
+    finally:
+        concat_list.unlink(missing_ok=True)
+
+    return f"timeshift/{output_filename}" if output_path.exists() else None

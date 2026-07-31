@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     motor_serial_baud: int = 9600
     recordings_dir: str = "recordings"
     recording_segment_seconds: int = 30
-    recording_buffer_segment_count: int = 20
+    recording_buffer_segment_count: int = 60
     recording_clip_post_roll_seconds: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
