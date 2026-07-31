@@ -15,11 +15,11 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 # big homography automatically risks either a feature-matching artifact or
 # genuine tampering silently "fixing" the zone to point at the wrong place.
 AUTO_CORRECT_LIMIT_PX = 150.0
-FLAG_LIMIT_PX = 400.0
+FLAG_LIMIT_PX = 1200.0
 MIN_MATCH_COUNT = 7
 MIN_INLIER_RATIO = 0.2
-MAX_SCALE_CHANGE_RATIO = 0.5
-MAX_PERSPECTIVE_TERM = 0.004
+MAX_SCALE_CHANGE_RATIO = 19.0
+MAX_PERSPECTIVE_TERM = 0.01
 ORB_FEATURE_COUNT = 2000
 GOOD_MATCH_LIMIT = 250
 RATIO_TEST_THRESHOLD = 0.75
