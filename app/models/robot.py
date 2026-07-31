@@ -16,8 +16,10 @@ class Robot(Base):
     # existing row instead of creating a duplicate. Manually-created robots
     # (via the admin UI) leave this null. Typically the robot Pi's MAC address.
     hardware_id: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
-    # host:port of the robot's onboard Raspberry Pi, reachable over wifi —
-    # PTZ/movement commands are POSTed here (see services/robot_controller.py).
+    # host:port of the robot's onboard Raspberry Pi at last registration —
+    # informational only. Commands are pushed over the robot's WebSocket
+    # connection (see services/robot_connections.py), not POSTed here,
+    # since robots may be behind NAT/firewalls the backend can't dial into.
     control_address: Mapped[str] = mapped_column(String(100), nullable=False)
     camera_rtsp_url: Mapped[str] = mapped_column(String(255), nullable=False)
     location_x: Mapped[float | None] = mapped_column(Float, nullable=True)

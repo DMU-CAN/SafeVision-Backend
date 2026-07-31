@@ -984,10 +984,18 @@ body 없음.
 |---|---|---|---|
 | `hardwareId` | string | Y | 로봇의 불변 식별자 (MAC 주소 권장) — upsert 키 |
 | `name` | string | Y | 로봇 이름 |
-| `controlAddress` | string | Y | 로봇 자신의 현재 `host:port` (매 등록 시 최신값으로 갱신됨) |
+| `controlAddress` | string | Y | 로봇 자신의 현재 `host:port` — **표시/디버깅용일 뿐 실제 명령 전송에는 안 씀** (아래 `/robots/ws` 참고) |
 | `cameraRtspUrl` | string | Y | 로봇 탑재 카메라 RTSP URL |
 
 같은 `hardwareId`로 재요청 시 기존 로봇의 `name`/`controlAddress`/`cameraRtspUrl`을 갱신하고 `status`를 `IDLE`로 리셋합니다(재부팅한 로봇은 더 이상 이전 출동 상태가 아니라고 간주). 응답은 목록의 개별 항목과 동일한 형태(`hardwareId` 필드 포함).
+
+### WS `/api/v1/robots/ws?hardwareId=...`
+
+- 상태: 구현완료
+
+로봇이 부팅 후 상시 연결을 열어두는 WebSocket 채널. 로봇이 다른 네트워크(NAT/방화벽 뒤)에 있을 수 있어 백엔드가 로봇의 `controlAddress`로 직접 접속할 수 없다는 전제로, **명령을 백엔드→로봇 방향으로 이 소켓에 push**하는 구조입니다 (카메라를 pull 대신 push로 바꾼 것과 같은 이유). `/register`와 동일하게 인증 없이 열려있고, `hardwareId` 쿼리 파라미터로 등록된 로봇을 식별합니다. 없는 `hardwareId`면 접속을 거부합니다(WS close code 4404).
+
+연결이 수립되면 `POST /robots/{robotId}/ptz` 같은 명령이 이 소켓으로 JSON 텍스트 프레임(`{"type":"ptz","direction":"up"}` 등)으로 전송됩니다. 로봇 쪽에서 보낼 메시지는 현재 없고(연결 유지 목적), 연결이 끊기면 해당 로봇으로의 명령은 `sent:false`로 응답됩니다.
 
 ### PUT `/api/v1/robots/{robotId}` / DELETE `/api/v1/robots/{robotId}`
 
@@ -1001,7 +1009,7 @@ body 없음.
 { "direction": "up" }
 ```
 
-`direction`: `up` | `down` | `left` | `right` | `zoomIn` | `zoomOut` | `stop`. 로봇 Pi의 `http://{controlAddress}/command`로 `{"type":"ptz","direction":...}` JSON을 그대로 POST합니다 — 로봇 Pi 쪽에서 이 엔드포인트를 구현해야 합니다.
+`direction`: `up` | `down` | `left` | `right` | `zoomIn` | `zoomOut` | `stop`. 로봇의 `/robots/ws` 연결로 `{"type":"ptz","direction":...}` JSON을 push합니다 — 로봇이 연결돼 있지 않으면 `sent:false`.
 
 #### Response 200
 

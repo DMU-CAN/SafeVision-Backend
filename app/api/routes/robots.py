@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.responses import error_response, success_response
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.models.camera import Camera
 from app.models.robot import Robot
 from app.models.robot_dispatch import RobotDispatch
@@ -18,7 +18,7 @@ from app.schemas.robot import (
     RobotResponse,
     RobotUpdateRequest,
 )
-from app.services.robot_controller import send_robot_command
+from app.services import robot_connections
 
 
 router = APIRouter()
@@ -112,9 +112,9 @@ def delete_robot(robot_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{robot_id}/ptz", dependencies=protected)
-def send_ptz_command(robot_id: int, payload: RobotPtzRequest, db: Session = Depends(get_db)):
-    robot = get_robot_or_404(robot_id, db)
-    sent = send_robot_command(robot.control_address, {"type": "ptz", "direction": payload.direction})
+async def send_ptz_command(robot_id: int, payload: RobotPtzRequest, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "ptz", "direction": payload.direction})
     return success_response(data={"sent": sent}, message="PTZ 명령을 전송했습니다.")
 
 
@@ -160,3 +160,35 @@ def list_dispatches(robot_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return success_response(data=[serialize_dispatch(dispatch) for dispatch in dispatches])
+
+
+@router.websocket("/ws")
+async def robot_command_channel(websocket: WebSocket, hardware_id: str = Query(alias="hardwareId")):
+    """The robot itself connects here and keeps the socket open (see
+    SafeVision-Robot's command_ws.py) — commands are pushed down this
+    connection instead of the backend dialing the robot, since robots may
+    be behind NAT/firewalls the backend can't reach inbound. No auth here,
+    same as /register — a robot only needs to know its own hardware_id,
+    matching the self-registration flow's trust model."""
+    db = SessionLocal()
+    try:
+        robot = db.scalar(select(Robot).where(Robot.hardware_id == hardware_id))
+    finally:
+        db.close()
+
+    if robot is None:
+        await websocket.close(code=4404)
+        return
+
+    await websocket.accept()
+    robot_connections.register(robot.id, websocket)
+    try:
+        while True:
+            # Nothing meaningful expected from the robot on this channel —
+            # just block here so we notice the disconnect (ping/pong is
+            # handled by the ASGI server beneath us).
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        robot_connections.unregister(robot.id, websocket)

@@ -20,10 +20,12 @@ class RobotCreateRequest(BaseModel):
 
 
 class RobotRegisterRequest(BaseModel):
-    """Sent by the robot itself on boot (see SafeVision-Robot's discovery
-    client) rather than filled in by hand — the robot knows its own
-    control/camera addresses, the backend just needs a stable identity
-    (hardware_id, e.g. its Pi's MAC address) to upsert against."""
+    """Sent by the robot itself on boot (see SafeVision-Robot's register_client.py)
+    rather than filled in by hand — the backend just needs a stable identity
+    (hardware_id, e.g. its Pi's MAC address) to upsert against. control_address
+    is stored for display/debugging only — actual commands go over the
+    robot's WebSocket connection (see /robots/ws), not this address, since
+    robots may be behind NAT the backend can't dial into."""
 
     hardware_id: str = Field(alias="hardwareId", min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)

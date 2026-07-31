@@ -6,10 +6,13 @@ from app.core.config import get_settings
 
 
 def send_robot_command(control_address: str, command: dict) -> bool:
-    """POSTs a JSON command to the robot's onboard Pi over wifi
-    (`control_address` is host:port). Mirrors motor_controller.py's
-    philosophy: a robot being unreachable must never raise — it's logged
-    and reported back as `sent: false` so the caller can show that in the UI."""
+    """POSTs a JSON command to a device's onboard HTTP receiver
+    (`control_address` is host:port). Used for NETWORK-protocol equipment
+    (see equipment_controller.py) reachable directly on the local network.
+    Robots use robot_connections.send_command instead — see that module's
+    docstring for why (they may be behind NAT the backend can't reach
+    inbound). Mirrors motor_controller.py's philosophy: unreachable must
+    never raise — it's logged and reported back as `sent: false`."""
     settings = get_settings()
     url = f"http://{control_address}/command"
     body = json.dumps(command).encode("utf-8")
