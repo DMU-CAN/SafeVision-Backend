@@ -9,6 +9,12 @@
 #   cp mediamtx.yml.example mediamtx.yml
 rtspAddress: :8554
 
+# Without this, MediaMTX rejects any publish to a path that wasn't
+# pre-declared ("path 'cam' is not configured") even with correct auth —
+# all_others lets any camera path (cam, cam2, ...) publish dynamically.
+paths:
+  all_others:
+
 authInternalUsers:
   - user: publisher
     pass: change-this-password
