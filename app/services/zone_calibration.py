@@ -17,10 +17,16 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 AUTO_CORRECT_LIMIT_PX = 150.0
 FLAG_LIMIT_PX = 400.0
 MIN_MATCH_COUNT = 15
+MIN_INLIER_RATIO = 0.35
+MAX_SCALE_CHANGE_RATIO = 0.35
+MAX_PERSPECTIVE_TERM = 0.002
+ORB_FEATURE_COUNT = 2000
+GOOD_MATCH_LIMIT = 250
+RATIO_TEST_THRESHOLD = 0.75
 DRIFT_IGNORE_LIMIT_PX = 5.0
 
-_orb = cv2.ORB_create(500)
-_matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+_orb = cv2.ORB_create(ORB_FEATURE_COUNT)
+_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
 
 
 def _reference_path(camera_id: int) -> Path:
@@ -73,7 +79,17 @@ def _estimate_homography(reference_bgr, current_bgr):
     ):
         return None, f"not enough keypoints reference={len(keypoints1)} current={len(keypoints2)}"
 
-    matches = sorted(_matcher.match(descriptors1, descriptors2), key=lambda match: match.distance)[:100]
+    raw_matches = _matcher.knnMatch(descriptors1, descriptors2, k=2)
+    matches = sorted(
+        [
+            match
+            for match_pair in raw_matches
+            if len(match_pair) == 2
+            for match, next_match in [match_pair]
+            if match.distance < RATIO_TEST_THRESHOLD * next_match.distance
+        ],
+        key=lambda match: match.distance,
+    )[:GOOD_MATCH_LIMIT]
     if len(matches) < MIN_MATCH_COUNT:
         return None, f"not enough matches matches={len(matches)}"
 
@@ -81,10 +97,30 @@ def _estimate_homography(reference_bgr, current_bgr):
     dst_points = np.float32([keypoints2[match.trainIdx].pt for match in matches]).reshape(-1, 1, 2)
 
     homography, inlier_mask = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
-    if homography is None or inlier_mask is None or int(inlier_mask.sum()) < MIN_MATCH_COUNT:
+    inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
+    inlier_ratio = inliers / max(len(matches), 1)
+    if homography is None or inlier_mask is None or inliers < MIN_MATCH_COUNT:
         inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
-        return None, f"homography failed inliers={inliers}"
+        return None, f"homography failed matches={len(matches)} inliers={inliers}"
+    if inlier_ratio < MIN_INLIER_RATIO:
+        return None, f"homography rejected matches={len(matches)} inliers={inliers} ratio={inlier_ratio:.2f}"
+    sanity_error = _homography_sanity_error(homography)
+    if sanity_error:
+        return None, sanity_error
     return homography, None
+
+
+def _homography_sanity_error(homography) -> str | None:
+    scale_x = float(np.linalg.norm(homography[0, :2]))
+    scale_y = float(np.linalg.norm(homography[1, :2]))
+    if not (1 - MAX_SCALE_CHANGE_RATIO <= scale_x <= 1 + MAX_SCALE_CHANGE_RATIO):
+        return f"homography rejected scale_x={scale_x:.2f}"
+    if not (1 - MAX_SCALE_CHANGE_RATIO <= scale_y <= 1 + MAX_SCALE_CHANGE_RATIO):
+        return f"homography rejected scale_y={scale_y:.2f}"
+    perspective = max(abs(float(homography[2, 0])), abs(float(homography[2, 1])))
+    if perspective > MAX_PERSPECTIVE_TERM:
+        return f"homography rejected perspective={perspective:.5f}"
+    return None
 
 
 def _drift_magnitude_px(homography, frame_width: int, frame_height: int) -> float:
