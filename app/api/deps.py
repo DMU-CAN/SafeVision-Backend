@@ -1,4 +1,4 @@
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.responses import error_response
@@ -9,15 +9,24 @@ from app.models.user import User
 
 def get_current_user(
     authorization: str | None = Header(default=None),
+    access_token: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
+    # <video>/<img> src="..." requests (timeshift clips, event clips) can't
+    # set an Authorization header, so they pass the token as a query param
+    # instead — the header takes priority whenever both are present.
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.removeprefix("Bearer ").strip()
+    elif access_token:
+        token = access_token
+
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=error_response("UNAUTHORIZED", "인증 토큰이 필요합니다."),
         )
 
-    token = authorization.removeprefix("Bearer ").strip()
     try:
         payload = decode_token(token, expected_type="access")
         user_id = int(payload["sub"])
