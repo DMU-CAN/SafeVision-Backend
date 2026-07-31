@@ -52,15 +52,23 @@ def capture_frame_from_buffer(camera_id: int):
     if not segments:
         return None
 
-    capture = cv2.VideoCapture(str(segments[-1]))
-    try:
-        total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames > 1:
-            capture.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
-        ok, frame = capture.read()
-        return frame if ok else None
-    finally:
-        capture.release()
+    # The newest segment can still be open for writing, which often makes
+    # OpenCV/ffmpeg report "moov atom not found". Walk backward through a few
+    # recent files and use the newest one that is actually readable.
+    for segment in reversed(segments[-5:]):
+        capture = cv2.VideoCapture(str(segment))
+        try:
+            if not capture.isOpened():
+                continue
+            total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            if total_frames > 1:
+                capture.set(cv2.CAP_PROP_POS_FRAMES, total_frames - 1)
+            ok, frame = capture.read()
+            if ok and frame is not None:
+                return frame
+        finally:
+            capture.release()
+    return None
 
 
 def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
