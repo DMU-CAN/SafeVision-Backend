@@ -13,7 +13,7 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 # Lucas-Kanade optical flow, then apply a partial affine transform to zones.
 # This avoids the wild perspective warping that whole-frame ORB homography can
 # produce in low-texture scenes.
-AUTO_CORRECT_LIMIT_PX = 180.0
+AUTO_CORRECT_LIMIT_PX = 220.0
 FLAG_LIMIT_PX = 1200.0
 MAX_TRACK_POINTS = 100
 MIN_TRACKED_POINTS = 8
@@ -24,6 +24,7 @@ DRIFT_IGNORE_LIMIT_PX = 5.0
 LK_WINDOW_SIZE = (41, 41)
 LK_PYRAMID_LEVELS = 3
 RANSAC_REPROJ_THRESHOLD = 8.0
+MIN_PHASE_CORRELATION_RESPONSE = 0.18
 
 
 def _reference_path(camera_id: int) -> Path:
@@ -116,6 +117,23 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
     return affine, None
 
 
+def _estimate_translation_from_phase_correlation(reference_bgr, current_bgr):
+    reference_gray = cv2.cvtColor(reference_bgr, cv2.COLOR_BGR2GRAY)
+    current_gray = cv2.cvtColor(current_bgr, cv2.COLOR_BGR2GRAY)
+    if reference_gray.shape != current_gray.shape:
+        current_gray = cv2.resize(current_gray, (reference_gray.shape[1], reference_gray.shape[0]))
+
+    reference_float = np.float32(reference_gray)
+    current_float = np.float32(current_gray)
+    window = cv2.createHanningWindow((reference_gray.shape[1], reference_gray.shape[0]), cv2.CV_32F)
+    (dx, dy), response = cv2.phaseCorrelate(reference_float, current_float, window)
+    if response < MIN_PHASE_CORRELATION_RESPONSE:
+        return None, f"phase correlation rejected response={response:.2f} dx={dx:.1f} dy={dy:.1f}"
+
+    affine = np.array([[1.0, 0.0, dx], [0.0, 1.0, dy]], dtype=np.float32)
+    return affine, None
+
+
 def _affine_sanity_error(affine) -> str | None:
     scale_x = float(np.linalg.norm(affine[0, :2]))
     scale_y = float(np.linalg.norm(affine[1, :2]))
@@ -173,6 +191,15 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
         return False
 
     affine, reason = _estimate_affine_from_tracked_points(reference_bgr, current_bgr)
+    if affine is None:
+        affine, fallback_reason = _estimate_translation_from_phase_correlation(reference_bgr, current_bgr)
+        if affine is not None:
+            print(
+                f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: using translation fallback "
+                f"after affine skip ({reason})"
+            )
+        else:
+            reason = f"{reason}; {fallback_reason}"
     if affine is None:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: skipped drift check ({reason})")
         return False
