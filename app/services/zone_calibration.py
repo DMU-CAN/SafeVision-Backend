@@ -17,6 +17,7 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 AUTO_CORRECT_LIMIT_PX = 150.0
 FLAG_LIMIT_PX = 400.0
 MIN_MATCH_COUNT = 15
+DRIFT_IGNORE_LIMIT_PX = 5.0
 
 _orb = cv2.ORB_create(500)
 _matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
@@ -70,19 +71,20 @@ def _estimate_homography(reference_bgr, current_bgr):
         or len(keypoints1) < MIN_MATCH_COUNT
         or len(keypoints2) < MIN_MATCH_COUNT
     ):
-        return None
+        return None, f"not enough keypoints reference={len(keypoints1)} current={len(keypoints2)}"
 
     matches = sorted(_matcher.match(descriptors1, descriptors2), key=lambda match: match.distance)[:100]
     if len(matches) < MIN_MATCH_COUNT:
-        return None
+        return None, f"not enough matches matches={len(matches)}"
 
     src_points = np.float32([keypoints1[match.queryIdx].pt for match in matches]).reshape(-1, 1, 2)
     dst_points = np.float32([keypoints2[match.trainIdx].pt for match in matches]).reshape(-1, 1, 2)
 
     homography, inlier_mask = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
     if homography is None or inlier_mask is None or int(inlier_mask.sum()) < MIN_MATCH_COUNT:
-        return None
-    return homography
+        inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
+        return None, f"homography failed inliers={inliers}"
+    return homography, None
 
 
 def _drift_magnitude_px(homography, frame_width: int, frame_height: int) -> float:
@@ -123,25 +125,31 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
     record a safety event) rather than auto-corrected."""
     reference_path = _reference_path(camera_id)
     if not reference_path.exists():
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: reference frame missing")
         return False
 
     reference_bgr = cv2.imread(str(reference_path))
     if reference_bgr is None:
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: reference frame unreadable")
         return False
 
-    homography = _estimate_homography(reference_bgr, current_bgr)
+    homography, reason = _estimate_homography(reference_bgr, current_bgr)
     if homography is None:
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: skipped drift check ({reason})")
         return False
 
     frame_height, frame_width = current_bgr.shape[:2]
     drift = _drift_magnitude_px(homography, frame_width, frame_height)
 
-    if drift < 5.0:
+    if drift < DRIFT_IGNORE_LIMIT_PX:
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px below threshold")
         return False
 
     if drift > FLAG_LIMIT_PX:
+        print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px flagged")
         return True
 
+    print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px correcting zones")
     _apply_correction(camera_id, homography, frame_width, frame_height)
     if drift <= AUTO_CORRECT_LIMIT_PX:
         save_reference_frame(camera_id, current_bgr)  # adopt the corrected framing as the new baseline
