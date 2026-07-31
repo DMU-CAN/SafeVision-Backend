@@ -136,8 +136,10 @@ def build_timeshift_clip(camera_id: int, minutes_ago: float) -> str | None:
     if not all_segments:
         return None
 
+    settings = get_settings()
     cutoff = time.time() - minutes_ago * 60
-    segments = [segment for segment in all_segments if segment.stat().st_mtime >= cutoff]
+    segment_grace_seconds = settings.recording_segment_seconds + 2
+    segments = [segment for segment in all_segments if segment.stat().st_mtime >= cutoff - segment_grace_seconds]
     if not segments:
         segments = all_segments[-1:]  # requested window is older than the whole buffer — best effort
 
@@ -147,17 +149,28 @@ def build_timeshift_clip(camera_id: int, minutes_ago: float) -> str | None:
     output_path = timeshift_dir / output_filename
     concat_list = timeshift_dir / f"camera_{camera_id}.txt"
 
+    output_path.unlink(missing_ok=True)
     concat_list.write_text("".join(f"file '{segment.resolve()}'\n" for segment in segments))
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "ffmpeg", "-loglevel", "warning", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(concat_list),
-                "-c", "copy", str(output_path),
+                "-c", "copy", "-movflags", "+faststart", str(output_path),
             ],
             check=False,
+            capture_output=True,
+            text=True,
         )
     finally:
         concat_list.unlink(missing_ok=True)
 
-    return f"timeshift/{output_filename}" if output_path.exists() else None
+    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size == 0:
+        print(
+            f"[BARO][RECORDING][TIMESHIFT_ERROR] camera_id={camera_id} "
+            f"minutes_ago={minutes_ago} returncode={result.returncode} stderr={result.stderr.strip()}"
+        )
+        output_path.unlink(missing_ok=True)
+        return None
+
+    return f"timeshift/{output_filename}"
