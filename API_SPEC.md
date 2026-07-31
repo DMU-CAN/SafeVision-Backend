@@ -933,6 +933,7 @@ body 없음.
   "data": { "items": [
     {
       "id": 1,
+      "hardwareId": "dc:a6:32:12:34:56",
       "name": "현장로봇-1",
       "controlAddress": "192.168.0.50:8081",
       "cameraRtspUrl": "rtsp://192.168.0.50:8554/cam",
@@ -960,7 +961,33 @@ body 없음.
 | `locationX` | number | N | 도면 좌표 |
 | `locationY` | number | N | 도면 좌표 |
 
-응답은 목록의 개별 항목과 동일한 형태.
+응답은 목록의 개별 항목과 동일한 형태. 관리자가 폼으로 직접 등록할 때 사용 — 로봇이 스스로 등록할 때는 아래 `/register`를 사용.
+
+### POST `/api/v1/robots/register`
+
+- 상태: 구현완료
+
+로봇 자체(SafeVision-Robot repo)가 부팅 시 자기 자신을 등록/갱신하기 위해 호출하는 엔드포인트. 사람이 폼에 채워넣는 대신, 로봇이 자신의 `controlAddress`/`cameraRtspUrl`을 직접 보고합니다. `hardwareId`(로봇 Pi의 MAC 주소 등 불변 식별자) 기준으로 upsert하므로, 재부팅이나 DHCP로 IP가 바뀌어도 같은 로봇 레코드가 갱신되지 로봇이 중복 생성되지 않습니다.
+
+#### Request Body
+
+```json
+{
+  "hardwareId": "dc:a6:32:12:34:56",
+  "name": "현장로봇-1",
+  "controlAddress": "192.168.0.50:8081",
+  "cameraRtspUrl": "rtsp://192.168.0.50:8554/cam"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `hardwareId` | string | Y | 로봇의 불변 식별자 (MAC 주소 권장) — upsert 키 |
+| `name` | string | Y | 로봇 이름 |
+| `controlAddress` | string | Y | 로봇 자신의 현재 `host:port` (매 등록 시 최신값으로 갱신됨) |
+| `cameraRtspUrl` | string | Y | 로봇 탑재 카메라 RTSP URL |
+
+같은 `hardwareId`로 재요청 시 기존 로봇의 `name`/`controlAddress`/`cameraRtspUrl`을 갱신하고 `status`를 `IDLE`로 리셋합니다(재부팅한 로봇은 더 이상 이전 출동 상태가 아니라고 간주). 응답은 목록의 개별 항목과 동일한 형태(`hardwareId` 필드 포함).
 
 ### PUT `/api/v1/robots/{robotId}` / DELETE `/api/v1/robots/{robotId}`
 

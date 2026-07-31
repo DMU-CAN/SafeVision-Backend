@@ -13,6 +13,7 @@ from app.schemas.robot import (
     RobotDispatchRequest,
     RobotDispatchResponse,
     RobotPtzRequest,
+    RobotRegisterRequest,
     RobotResponse,
     RobotUpdateRequest,
 )
@@ -60,6 +61,29 @@ def create_robot(payload: RobotCreateRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(robot)
     return success_response(data=serialize_robot(robot), message="로봇이 등록되었습니다.")
+
+
+@router.post("/register")
+def register_robot(payload: RobotRegisterRequest, db: Session = Depends(get_db)):
+    """Self-registration endpoint the robot calls on boot (see
+    SafeVision-Robot's discovery client) instead of an operator filling in
+    a form — upserts by hardware_id so re-announcing after a reboot/IP
+    change updates the existing row rather than creating a duplicate."""
+    robot = db.scalar(select(Robot).where(Robot.hardware_id == payload.hardware_id))
+    created = robot is None
+    if robot is None:
+        robot = Robot(hardware_id=payload.hardware_id)
+        db.add(robot)
+
+    robot.name = payload.name
+    robot.control_address = payload.control_address
+    robot.camera_rtsp_url = payload.camera_rtsp_url
+    robot.status = "IDLE"
+
+    db.commit()
+    db.refresh(robot)
+    message = "로봇이 등록되었습니다." if created else "로봇 접속 정보가 갱신되었습니다."
+    return success_response(data=serialize_robot(robot), message=message)
 
 
 @router.get("/{robot_id}")

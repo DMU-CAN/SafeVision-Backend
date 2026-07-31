@@ -30,6 +30,9 @@ _PENDING_COLUMNS: dict[str, list[tuple[str, str]]] = {
     # SQLite requires a DEFAULT when adding a NOT NULL column to a table that
     # already has rows.
     "zones": [("zone_type", "VARCHAR(30) NOT NULL DEFAULT 'DANGER'")],
+    # SQLite can't add a UNIQUE constraint via ALTER TABLE ADD COLUMN, so
+    # uniqueness is enforced separately below via a unique index.
+    "robots": [("hardware_id", "VARCHAR(100)")],
 }
 
 
@@ -49,3 +52,9 @@ def run_lightweight_migrations() -> None:
                 continue
             with engine.begin() as connection:
                 connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+
+    if "robots" in existing_tables:
+        with engine.begin() as connection:
+            connection.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_robots_hardware_id ON robots (hardware_id)")
+            )

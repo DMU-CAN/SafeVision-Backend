@@ -19,6 +19,20 @@ class RobotCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class RobotRegisterRequest(BaseModel):
+    """Sent by the robot itself on boot (see SafeVision-Robot's discovery
+    client) rather than filled in by hand — the robot knows its own
+    control/camera addresses, the backend just needs a stable identity
+    (hardware_id, e.g. its Pi's MAC address) to upsert against."""
+
+    hardware_id: str = Field(alias="hardwareId", min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    control_address: str = Field(alias="controlAddress", min_length=1, max_length=100)
+    camera_rtsp_url: str = Field(alias="cameraRtspUrl", min_length=1, max_length=255)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class RobotUpdateRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     control_address: Optional[str] = Field(default=None, alias="controlAddress", min_length=1, max_length=100)
@@ -32,6 +46,7 @@ class RobotUpdateRequest(BaseModel):
 
 class RobotResponse(BaseModel):
     id: int
+    hardware_id: Optional[str] = Field(default=None, serialization_alias="hardwareId")
     name: str
     control_address: str = Field(serialization_alias="controlAddress")
     camera_rtsp_url: str = Field(serialization_alias="cameraRtspUrl")
