@@ -14,6 +14,7 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 # This avoids the wild perspective warping that whole-frame ORB homography can
 # produce in low-texture scenes.
 AUTO_CORRECT_LIMIT_PX = 320.0
+LOW_CONFIDENCE_AUTO_CORRECT_LIMIT_PX = 360.0
 FLAG_LIMIT_PX = 1200.0
 MAX_TRACK_POINTS = 100
 MIN_TRACKED_POINTS = 8
@@ -25,6 +26,10 @@ LK_WINDOW_SIZE = (41, 41)
 LK_PYRAMID_LEVELS = 3
 RANSAC_REPROJ_THRESHOLD = 8.0
 MIN_PHASE_CORRELATION_RESPONSE = 0.10
+LOW_PHASE_CORRELATION_RESPONSE = 0.02
+LOW_PHASE_CONFIRM_DISTANCE_PX = 25.0
+
+_pending_low_confidence_translations: dict[int, tuple[float, float]] = {}
 
 
 def _reference_path(camera_id: int) -> Path:
@@ -125,7 +130,7 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
     return affine, None
 
 
-def _estimate_translation_from_phase_correlation(reference_bgr, current_bgr):
+def _estimate_translation_from_phase_correlation(camera_id: int, reference_bgr, current_bgr):
     reference_gray = cv2.cvtColor(reference_bgr, cv2.COLOR_BGR2GRAY)
     current_gray = cv2.cvtColor(current_bgr, cv2.COLOR_BGR2GRAY)
     if reference_gray.shape != current_gray.shape:
@@ -135,8 +140,22 @@ def _estimate_translation_from_phase_correlation(reference_bgr, current_bgr):
     current_float = np.float32(current_gray)
     window = cv2.createHanningWindow((reference_gray.shape[1], reference_gray.shape[0]), cv2.CV_32F)
     (dx, dy), response = cv2.phaseCorrelate(reference_float, current_float, window)
-    if response < MIN_PHASE_CORRELATION_RESPONSE:
+    if response < LOW_PHASE_CORRELATION_RESPONSE:
+        _pending_low_confidence_translations.pop(camera_id, None)
         return None, f"phase correlation rejected response={response:.2f} dx={dx:.1f} dy={dy:.1f}"
+    if response < MIN_PHASE_CORRELATION_RESPONSE:
+        previous = _pending_low_confidence_translations.get(camera_id)
+        _pending_low_confidence_translations[camera_id] = (dx, dy)
+        if previous is None:
+            return None, f"phase correlation waiting response={response:.2f} dx={dx:.1f} dy={dy:.1f}"
+        distance = ((dx - previous[0]) ** 2 + (dy - previous[1]) ** 2) ** 0.5
+        if distance > LOW_PHASE_CONFIRM_DISTANCE_PX:
+            return None, (
+                f"phase correlation unstable response={response:.2f} dx={dx:.1f} dy={dy:.1f} "
+                f"previous_dx={previous[0]:.1f} previous_dy={previous[1]:.1f}"
+            )
+    else:
+        _pending_low_confidence_translations.pop(camera_id, None)
 
     affine = np.array([[1.0, 0.0, dx], [0.0, 1.0, dy]], dtype=np.float32)
     return affine, None
@@ -200,7 +219,7 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
 
     affine, reason = _estimate_affine_from_tracked_points(reference_bgr, current_bgr)
     if affine is None:
-        affine, fallback_reason = _estimate_translation_from_phase_correlation(reference_bgr, current_bgr)
+        affine, fallback_reason = _estimate_translation_from_phase_correlation(camera_id, reference_bgr, current_bgr)
         if affine is not None:
             print(
                 f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: using translation fallback "
@@ -223,7 +242,7 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px flagged")
         return True
 
-    if drift > AUTO_CORRECT_LIMIT_PX:
+    if drift > LOW_CONFIDENCE_AUTO_CORRECT_LIMIT_PX:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px too large for auto-correction")
         return True
 
