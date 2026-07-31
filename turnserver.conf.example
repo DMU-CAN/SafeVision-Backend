@@ -12,6 +12,16 @@ no-dtls
 min-port=50000
 max-port=50100
 
+# Without this, coturn auto-discovers every local interface (LAN IP, docker
+# bridges like 172.17.0.1/172.18.0.1, ...) and may hand out one of those as
+# the relayed candidate address — which external browsers can never reach.
+# Replace both sides in the real turnserver.conf: the server's actual LAN IP
+# (relay-ip) and its current public IP (external-ip's first part). If the
+# public IP is dynamic, this needs updating whenever it changes (same
+# limitation as the DDNS record itself).
+# relay-ip=192.168.1.100
+# external-ip=203.0.113.1/192.168.1.100
+
 # Replace this in the real turnserver.conf. Do not commit the real file.
 user=safevision:change-this-password
 
