@@ -138,7 +138,7 @@ app/services/yolo_detector.py
 
 카메라가 방화벽/NAT 뒤에 있어 백엔드가 직접 pull(연결)할 수 없는 경우, `docker-compose.yml`에 포함된 `mediamtx` 서비스로 카메라가 직접 push하게 할 수 있습니다.
 
-1. `mediamtx.yml`의 `publishUser`/`publishPass`(기본값 `publisher`/`change-this-password`)를 실제 값으로 바꾸세요.
+1. `cp mediamtx.yml.example mediamtx.yml` 후(`mediamtx.yml`은 비밀번호가 들어가서 gitignore 대상입니다), `publishUser`/`publishPass`(기본값 `publisher`/`change-this-password`)를 실제 값으로 바꾸세요.
 2. 카메라(또는 카메라 노드)에서 메인 서버로 push:
    ```bash
    ffmpeg -i <카메라 입력> -c copy -f rtsp rtsp://publisher:<비밀번호>@<메인서버IP>:8554/cam1

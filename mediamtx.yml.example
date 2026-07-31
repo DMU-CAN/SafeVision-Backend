@@ -4,7 +4,9 @@
 # publish is credential-gated so randoms on the internet can't push garbage
 # streams into a path the backend then trusts as a registered camera.
 #
-# Change publishUser/publishPass before exposing 8554 to the internet.
+# This is a template — copy to mediamtx.yml (gitignored, per-server secret)
+# and set a real password before exposing 8554 to the internet:
+#   cp mediamtx.yml.example mediamtx.yml
 rtspAddress: :8554
 
 authInternalUsers:
