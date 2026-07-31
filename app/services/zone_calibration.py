@@ -18,8 +18,9 @@ LOW_CONFIDENCE_AUTO_CORRECT_LIMIT_PX = 360.0
 FLAG_LIMIT_PX = 1200.0
 MAX_TRACK_POINTS = 100
 MIN_TRACKED_POINTS = 8
+MIN_AFFINE_INLIERS = 4
 MAX_FLOW_ERROR = 38.0
-MIN_AFFINE_INLIER_RATIO = 0.20
+MIN_AFFINE_INLIER_RATIO = 0.08
 MAX_SCALE_CHANGE_RATIO = 2.0
 DRIFT_IGNORE_LIMIT_PX = 5.0
 LK_WINDOW_SIZE = (41, 41)
@@ -119,7 +120,7 @@ def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
     )
     inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
     inlier_ratio = inliers / max(len(src_points), 1)
-    if affine is None or inlier_mask is None or inliers < MIN_TRACKED_POINTS:
+    if affine is None or inlier_mask is None or inliers < MIN_AFFINE_INLIERS:
         return None, f"affine failed tracked={len(src_points)} inliers={inliers}"
     if inlier_ratio < MIN_AFFINE_INLIER_RATIO:
         return None, f"affine rejected tracked={len(src_points)} inliers={inliers} ratio={inlier_ratio:.2f}"
