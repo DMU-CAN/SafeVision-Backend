@@ -12,13 +12,35 @@ from app.services.recording_service import extract_event_clip
 def record_fall_detected_event(camera_id: int | None = None) -> None:
     detected_at = datetime.now(timezone.utc)
     print(f"[BARO][FALL_DETECTED] {detected_at.isoformat()} 넘어짐 감지됨 camera_id={camera_id}")
-    _record_event(event_type="FALL_DETECTED", event_level=2, camera_id=camera_id)
+    _record_event(event_type="FALL_DETECTED", event_level=2, camera_id=camera_id, equipment_action="none")
 
 
-def record_zone_intrusion_event(camera_id: int | None = None, zone_id: int | None = None) -> None:
+def record_zone_intrusion_event(
+    camera_id: int | None = None,
+    zone_id: int | None = None,
+    zone_type: str | None = None,
+) -> None:
     detected_at = datetime.now(timezone.utc)
-    print(f"[BARO][ZONE_INTRUSION] {detected_at.isoformat()} 위험구역 접근 감지됨 camera_id={camera_id} zone_id={zone_id}")
-    _record_event(event_type="ZONE_INTRUSION", event_level=2, camera_id=camera_id, zone_id=zone_id)
+    if zone_type == "DANGER":
+        equipment_action = "stop"
+        event_level = 1
+    elif zone_type == "RESTRICTED":
+        equipment_action = "slow"
+        event_level = 2
+    else:
+        equipment_action = "none"
+        event_level = 2
+    print(
+        f"[BARO][ZONE_INTRUSION] {detected_at.isoformat()} 구역 접근 감지됨 "
+        f"camera_id={camera_id} zone_id={zone_id} zone_type={zone_type} action={equipment_action.upper()}"
+    )
+    _record_event(
+        event_type="ZONE_INTRUSION",
+        event_level=event_level,
+        camera_id=camera_id,
+        zone_id=zone_id,
+        equipment_action=equipment_action,
+    )
 
 
 def record_camera_drift_event(camera_id: int | None = None) -> None:
@@ -28,7 +50,7 @@ def record_camera_drift_event(camera_id: int | None = None) -> None:
     # re-register the zones, not an automatic equipment stop.
     detected_at = datetime.now(timezone.utc)
     print(f"[BARO][CAMERA_ANGLE_CHANGED] {detected_at.isoformat()} 카메라 각도 변경 감지됨 camera_id={camera_id}")
-    _record_event(event_type="CAMERA_ANGLE_CHANGED", event_level=2, camera_id=camera_id, stop_equipment=False)
+    _record_event(event_type="CAMERA_ANGLE_CHANGED", event_level=2, camera_id=camera_id, equipment_action="none")
 
 
 def _record_event(
@@ -36,7 +58,7 @@ def _record_event(
     event_level: int,
     camera_id: int | None = None,
     zone_id: int | None = None,
-    stop_equipment: bool = True,
+    equipment_action: str = "stop",
 ) -> None:
     event_id: int | None = None
     db = SessionLocal()
@@ -57,8 +79,10 @@ def _record_event(
     finally:
         db.close()
 
-    if stop_equipment:
+    if equipment_action == "stop":
         get_motor_controller().stop()
+    elif equipment_action == "slow":
+        get_motor_controller().slow()
 
     if camera_id is not None and event_id is not None:
         threading.Thread(target=_save_event_clip, args=(camera_id, event_id, event_type), daemon=True).start()

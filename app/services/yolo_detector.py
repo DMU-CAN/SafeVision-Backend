@@ -177,7 +177,11 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             return
 
         self.last_zone_event_at = now
-        record_zone_intrusion_event(camera_id=self.camera_id, zone_id=matched_zone.id)
+        record_zone_intrusion_event(
+            camera_id=self.camera_id,
+            zone_id=matched_zone.id,
+            zone_type=matched_zone.zone_type,
+        )
 
     def _foot_point(self, detection: Detection) -> tuple[float, float]:
         x1, _, x2, y2 = detection.box
