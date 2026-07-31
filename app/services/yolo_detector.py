@@ -88,6 +88,7 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         self.camera_id = camera_id
         self.last_fall_event_at = 0.0
         self.last_zone_event_at = 0.0
+        self.last_drift_event_at = 0.0
         self.last_inference_at = 0.0
         self.last_drift_check_at = 0.0
         self.cached_detections: list[Detection] = []
@@ -113,7 +114,8 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         if self.camera_id is not None and now - self.last_drift_check_at >= settings.zone_drift_check_interval_seconds:
             self.last_drift_check_at = now
             flagged = await asyncio.to_thread(check_and_correct_drift, self.camera_id, image.copy())
-            if flagged:
+            if flagged and now - self.last_drift_event_at >= settings.zone_drift_event_cooldown_seconds:
+                self.last_drift_event_at = now
                 record_camera_drift_event(camera_id=self.camera_id)
 
         fall_detections: list[Detection] = []

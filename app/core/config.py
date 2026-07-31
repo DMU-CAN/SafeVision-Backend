@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     fall_event_cooldown_seconds: int = 10
     zone_intrusion_cooldown_seconds: int = 10
     zone_drift_check_interval_seconds: float = 2.0
+    zone_drift_event_cooldown_seconds: int = 60
     robot_command_timeout_seconds: float = 2.0
     motor_control_enabled: bool = True
     motor_serial_port: str = "/dev/ttyACM0"

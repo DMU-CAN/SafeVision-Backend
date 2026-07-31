@@ -13,7 +13,7 @@ from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 # Lucas-Kanade optical flow, then apply a partial affine transform to zones.
 # This avoids the wild perspective warping that whole-frame ORB homography can
 # produce in low-texture scenes.
-AUTO_CORRECT_LIMIT_PX = 220.0
+AUTO_CORRECT_LIMIT_PX = 320.0
 FLAG_LIMIT_PX = 1200.0
 MAX_TRACK_POINTS = 100
 MIN_TRACKED_POINTS = 8
