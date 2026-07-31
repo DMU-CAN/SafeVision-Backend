@@ -15,3 +15,5 @@ class Zone(Base):
     # actual camera source resolution.
     points: Mapped[list] = mapped_column(JSON, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # DANGER | RESTRICTED | WORK | OBSERVATION — see schemas/zone.py ZoneType.
+    zone_type: Mapped[str] = mapped_column(String(30), nullable=False, default="DANGER")

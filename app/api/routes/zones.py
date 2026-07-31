@@ -5,6 +5,7 @@ from app.core.responses import error_response, success_response
 from app.db.session import get_db
 from app.models.zone import Zone
 from app.schemas.zone import ZoneCreate, ZoneResponse
+from app.services.zone_calibration import capture_frame_from_buffer, has_reference_frame, save_reference_frame
 
 router = APIRouter()
 
@@ -28,10 +29,21 @@ def create_zone(payload: ZoneCreate, db: Session = Depends(get_db)):
         camera_id=payload.camera_id,
         name=payload.name,
         points=[point.model_dump() for point in payload.points],
+        zone_type=payload.zone_type,
     )
     db.add(zone)
     db.commit()
     db.refresh(zone)
+
+    # Establish the drift-correction baseline the first time a camera gets a
+    # zone — later zones on the same camera reuse it. Best-effort: a missing
+    # recording buffer (camera just registered, no segments yet) just means
+    # drift correction stays off for this camera until a frame is available.
+    if payload.camera_id is not None and not has_reference_frame(payload.camera_id):
+        frame = capture_frame_from_buffer(payload.camera_id)
+        if frame is not None:
+            save_reference_frame(payload.camera_id, frame)
+
     return success_response(data=serialize_zone(zone), message="위험구역이 저장되었습니다.")
 
 

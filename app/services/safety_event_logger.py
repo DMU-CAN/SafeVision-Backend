@@ -21,8 +21,22 @@ def record_zone_intrusion_event(camera_id: int | None = None, zone_id: int | Non
     _record_event(event_type="ZONE_INTRUSION", event_level=2, camera_id=camera_id, zone_id=zone_id)
 
 
+def record_camera_drift_event(camera_id: int | None = None) -> None:
+    # A large apparent camera shift isn't itself an on-site hazard the way a
+    # fall or a zone intrusion is — it means zone monitoring for this camera
+    # may now be unreliable, which calls for an operator to look and
+    # re-register the zones, not an automatic equipment stop.
+    detected_at = datetime.now(timezone.utc)
+    print(f"[BARO][CAMERA_ANGLE_CHANGED] {detected_at.isoformat()} 카메라 각도 변경 감지됨 camera_id={camera_id}")
+    _record_event(event_type="CAMERA_ANGLE_CHANGED", event_level=2, camera_id=camera_id, stop_equipment=False)
+
+
 def _record_event(
-    event_type: str, event_level: int, camera_id: int | None = None, zone_id: int | None = None
+    event_type: str,
+    event_level: int,
+    camera_id: int | None = None,
+    zone_id: int | None = None,
+    stop_equipment: bool = True,
 ) -> None:
     event_id: int | None = None
     db = SessionLocal()
@@ -43,7 +57,8 @@ def _record_event(
     finally:
         db.close()
 
-    get_motor_controller().stop()
+    if stop_equipment:
+        get_motor_controller().stop()
 
     if camera_id is not None and event_id is not None:
         threading.Thread(target=_save_event_clip, args=(camera_id, event_id, event_type), daemon=True).start()

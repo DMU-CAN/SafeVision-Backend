@@ -27,6 +27,9 @@ def get_db() -> Generator[Session, None, None]:
 _PENDING_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "safety_events": [("clip_path", "VARCHAR(255)")],
     "cameras": [("location_x", "FLOAT"), ("location_y", "FLOAT")],
+    # SQLite requires a DEFAULT when adding a NOT NULL column to a table that
+    # already has rows.
+    "zones": [("zone_type", "VARCHAR(30) NOT NULL DEFAULT 'DANGER'")],
 }
 
 

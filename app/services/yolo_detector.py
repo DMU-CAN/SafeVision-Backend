@@ -9,7 +9,12 @@ from aiortc import VideoStreamTrack
 from av import VideoFrame
 
 from app.core.config import get_settings
-from app.services.safety_event_logger import record_fall_detected_event, record_zone_intrusion_event
+from app.services.safety_event_logger import (
+    record_camera_drift_event,
+    record_fall_detected_event,
+    record_zone_intrusion_event,
+)
+from app.services.zone_calibration import check_and_correct_drift
 from app.services.zone_service import find_zone_for_point
 
 
@@ -115,6 +120,7 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         self.last_fall_event_at = 0.0
         self.last_zone_event_at = 0.0
         self.last_inference_at = 0.0
+        self.last_drift_check_at = 0.0
         self.cached_detections: list[Detection] = []
 
     async def recv(self) -> VideoFrame:
@@ -131,6 +137,15 @@ class YoloAnnotatedTrack(VideoStreamTrack):
             self.last_inference_at = now
             detector = get_yolo_detector()
             self.cached_detections = await asyncio.to_thread(detector.detect, image, self.confidence)
+
+        # Runs against the clean (pre-annotation) frame, on its own slow
+        # cadence — a bumped/vibrated camera mount is corrected (or flagged)
+        # long before it matters, no need to check every frame.
+        if self.camera_id is not None and now - self.last_drift_check_at >= settings.zone_drift_check_interval_seconds:
+            self.last_drift_check_at = now
+            flagged = await asyncio.to_thread(check_and_correct_drift, self.camera_id, image.copy())
+            if flagged:
+                record_camera_drift_event(camera_id=self.camera_id)
 
         fall_detections: list[Detection] = []
         person_detections: list[Detection] = []
