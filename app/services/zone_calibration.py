@@ -8,25 +8,19 @@ from app.db.session import SessionLocal
 from app.models.zone import Zone
 from app.services.zone_service import ZONE_SPACE_HEIGHT, ZONE_SPACE_WIDTH
 
-# A camera nudged out of place is common (bumped mount, vibration); a camera
-# actually re-aimed or torn down is a different situation entirely. These two
-# thresholds (in source-frame pixels) draw that line: small apparent motion
-# gets auto-corrected, large apparent motion only gets flagged — applying a
-# big homography automatically risks either a feature-matching artifact or
-# genuine tampering silently "fixing" the zone to point at the wrong place.
+# A camera nudged out of place is common (bumped mount, vibration). For the
+# demo path we track stable corner points from the saved reference frame with
+# Lucas-Kanade optical flow, then apply a partial affine transform to zones.
+# This avoids the wild perspective warping that whole-frame ORB homography can
+# produce in low-texture scenes.
 AUTO_CORRECT_LIMIT_PX = 150.0
 FLAG_LIMIT_PX = 1200.0
-MIN_MATCH_COUNT = 7
-MIN_INLIER_RATIO = 0.2
-MAX_SCALE_CHANGE_RATIO = 19.0
-MAX_PERSPECTIVE_TERM = 0.01
-ORB_FEATURE_COUNT = 2000
-GOOD_MATCH_LIMIT = 250
-RATIO_TEST_THRESHOLD = 0.75
+MAX_TRACK_POINTS = 80
+MIN_TRACKED_POINTS = 6
+MAX_FLOW_ERROR = 35.0
+MIN_AFFINE_INLIER_RATIO = 0.45
+MAX_SCALE_CHANGE_RATIO = 2.0
 DRIFT_IGNORE_LIMIT_PX = 5.0
-
-_orb = cv2.ORB_create(ORB_FEATURE_COUNT)
-_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
 
 
 def _reference_path(camera_id: int) -> Path:
@@ -65,73 +59,79 @@ def capture_frame_from_buffer(camera_id: int):
         capture.release()
 
 
-def _estimate_homography(reference_bgr, current_bgr):
+def _estimate_affine_from_tracked_points(reference_bgr, current_bgr):
     reference_gray = cv2.cvtColor(reference_bgr, cv2.COLOR_BGR2GRAY)
     current_gray = cv2.cvtColor(current_bgr, cv2.COLOR_BGR2GRAY)
 
-    keypoints1, descriptors1 = _orb.detectAndCompute(reference_gray, None)
-    keypoints2, descriptors2 = _orb.detectAndCompute(current_gray, None)
-    if (
-        descriptors1 is None
-        or descriptors2 is None
-        or len(keypoints1) < MIN_MATCH_COUNT
-        or len(keypoints2) < MIN_MATCH_COUNT
-    ):
-        return None, f"not enough keypoints reference={len(keypoints1)} current={len(keypoints2)}"
+    reference_points = cv2.goodFeaturesToTrack(
+        reference_gray,
+        maxCorners=MAX_TRACK_POINTS,
+        qualityLevel=0.01,
+        minDistance=20,
+        blockSize=7,
+    )
+    if reference_points is None or len(reference_points) < MIN_TRACKED_POINTS:
+        count = 0 if reference_points is None else len(reference_points)
+        return None, f"not enough reference track points points={count}"
 
-    raw_matches = _matcher.knnMatch(descriptors1, descriptors2, k=2)
-    matches = sorted(
-        [
-            match
-            for match_pair in raw_matches
-            if len(match_pair) == 2
-            for match, next_match in [match_pair]
-            if match.distance < RATIO_TEST_THRESHOLD * next_match.distance
-        ],
-        key=lambda match: match.distance,
-    )[:GOOD_MATCH_LIMIT]
-    if len(matches) < MIN_MATCH_COUNT:
-        return None, f"not enough matches matches={len(matches)}"
+    current_points, status, errors = cv2.calcOpticalFlowPyrLK(
+        reference_gray,
+        current_gray,
+        reference_points,
+        None,
+        winSize=(31, 31),
+        maxLevel=3,
+        criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
+    )
+    if current_points is None or status is None or errors is None:
+        return None, "optical flow failed"
 
-    src_points = np.float32([keypoints1[match.queryIdx].pt for match in matches]).reshape(-1, 1, 2)
-    dst_points = np.float32([keypoints2[match.trainIdx].pt for match in matches]).reshape(-1, 1, 2)
+    valid_mask = (status.reshape(-1) == 1) & (errors.reshape(-1) <= MAX_FLOW_ERROR)
+    src_points = reference_points.reshape(-1, 2)[valid_mask]
+    dst_points = current_points.reshape(-1, 2)[valid_mask]
+    if len(src_points) < MIN_TRACKED_POINTS:
+        return None, f"not enough tracked points points={len(src_points)}"
 
-    homography, inlier_mask = cv2.findHomography(src_points, dst_points, cv2.RANSAC, 5.0)
+    affine, inlier_mask = cv2.estimateAffinePartial2D(
+        src_points,
+        dst_points,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=8.0,
+        maxIters=2000,
+        confidence=0.98,
+    )
     inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
-    inlier_ratio = inliers / max(len(matches), 1)
-    if homography is None or inlier_mask is None or inliers < MIN_MATCH_COUNT:
-        inliers = int(inlier_mask.sum()) if inlier_mask is not None else 0
-        return None, f"homography failed matches={len(matches)} inliers={inliers}"
-    if inlier_ratio < MIN_INLIER_RATIO:
-        return None, f"homography rejected matches={len(matches)} inliers={inliers} ratio={inlier_ratio:.2f}"
-    sanity_error = _homography_sanity_error(homography)
+    inlier_ratio = inliers / max(len(src_points), 1)
+    if affine is None or inlier_mask is None or inliers < MIN_TRACKED_POINTS:
+        return None, f"affine failed tracked={len(src_points)} inliers={inliers}"
+    if inlier_ratio < MIN_AFFINE_INLIER_RATIO:
+        return None, f"affine rejected tracked={len(src_points)} inliers={inliers} ratio={inlier_ratio:.2f}"
+
+    sanity_error = _affine_sanity_error(affine)
     if sanity_error:
         return None, sanity_error
-    return homography, None
+    return affine, None
 
 
-def _homography_sanity_error(homography) -> str | None:
-    scale_x = float(np.linalg.norm(homography[0, :2]))
-    scale_y = float(np.linalg.norm(homography[1, :2]))
+def _affine_sanity_error(affine) -> str | None:
+    scale_x = float(np.linalg.norm(affine[0, :2]))
+    scale_y = float(np.linalg.norm(affine[1, :2]))
     if not (1 - MAX_SCALE_CHANGE_RATIO <= scale_x <= 1 + MAX_SCALE_CHANGE_RATIO):
-        return f"homography rejected scale_x={scale_x:.2f}"
+        return f"affine rejected scale_x={scale_x:.2f}"
     if not (1 - MAX_SCALE_CHANGE_RATIO <= scale_y <= 1 + MAX_SCALE_CHANGE_RATIO):
-        return f"homography rejected scale_y={scale_y:.2f}"
-    perspective = max(abs(float(homography[2, 0])), abs(float(homography[2, 1])))
-    if perspective > MAX_PERSPECTIVE_TERM:
-        return f"homography rejected perspective={perspective:.5f}"
+        return f"affine rejected scale_y={scale_y:.2f}"
     return None
 
 
-def _drift_magnitude_px(homography, frame_width: int, frame_height: int) -> float:
-    center = np.array([[[frame_width / 2, frame_height / 2]]], dtype=np.float32)
-    mapped = cv2.perspectiveTransform(center, homography)
-    dx = float(mapped[0][0][0]) - frame_width / 2
-    dy = float(mapped[0][0][1]) - frame_height / 2
+def _drift_magnitude_px(affine, frame_width: int, frame_height: int) -> float:
+    center = np.array([frame_width / 2, frame_height / 2, 1.0], dtype=np.float32)
+    mapped = affine @ center
+    dx = float(mapped[0]) - frame_width / 2
+    dy = float(mapped[1]) - frame_height / 2
     return (dx**2 + dy**2) ** 0.5
 
 
-def _apply_correction(camera_id: int, homography, frame_width: int, frame_height: int) -> None:
+def _apply_correction(camera_id: int, affine, frame_width: int, frame_height: int) -> None:
     db = SessionLocal()
     try:
         zones = db.query(Zone).filter(Zone.camera_id == camera_id, Zone.is_active.is_(True)).all()
@@ -140,10 +140,10 @@ def _apply_correction(camera_id: int, homography, frame_width: int, frame_height
             for point in zone.points:
                 px = point["x"] / ZONE_SPACE_WIDTH * frame_width
                 py = point["y"] / ZONE_SPACE_HEIGHT * frame_height
-                mapped = cv2.perspectiveTransform(np.array([[[px, py]]], dtype=np.float32), homography)
+                mapped = affine @ np.array([px, py, 1.0], dtype=np.float32)
                 corrected_points.append({
-                    "x": round(float(mapped[0][0][0]) / frame_width * ZONE_SPACE_WIDTH, 1),
-                    "y": round(float(mapped[0][0][1]) / frame_height * ZONE_SPACE_HEIGHT, 1),
+                    "x": round(float(mapped[0]) / frame_width * ZONE_SPACE_WIDTH, 1),
+                    "y": round(float(mapped[1]) / frame_height * ZONE_SPACE_HEIGHT, 1),
                 })
             zone.points = corrected_points
         db.commit()
@@ -169,13 +169,13 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: reference frame unreadable")
         return False
 
-    homography, reason = _estimate_homography(reference_bgr, current_bgr)
-    if homography is None:
+    affine, reason = _estimate_affine_from_tracked_points(reference_bgr, current_bgr)
+    if affine is None:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: skipped drift check ({reason})")
         return False
 
     frame_height, frame_width = current_bgr.shape[:2]
-    drift = _drift_magnitude_px(homography, frame_width, frame_height)
+    drift = _drift_magnitude_px(affine, frame_width, frame_height)
 
     if drift < DRIFT_IGNORE_LIMIT_PX:
         print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px below threshold")
@@ -186,7 +186,7 @@ def check_and_correct_drift(camera_id: int, current_bgr) -> bool:
         return True
 
     print(f"[BARO][ZONE_CALIBRATION] camera_id={camera_id}: drift={drift:.1f}px correcting zones")
-    _apply_correction(camera_id, homography, frame_width, frame_height)
+    _apply_correction(camera_id, affine, frame_width, frame_height)
     if drift <= AUTO_CORRECT_LIMIT_PX:
         save_reference_frame(camera_id, current_bgr)  # adopt the corrected framing as the new baseline
     return False
