@@ -1,0 +1,19 @@
+# Minimal MediaMTX config for accepting RTSP pushes from cameras/camera-nodes
+# on other networks. The backend itself always reads back over localhost
+# (rtsp://127.0.0.1:8554/<path>), so read access doesn't need auth — only
+# publish is credential-gated so randoms on the internet can't push garbage
+# streams into a path the backend then trusts as a registered camera.
+#
+# Change publishUser/publishPass before exposing 8554 to the internet.
+rtspAddress: :8554
+
+authInternalUsers:
+  - user: publisher
+    pass: change-this-password
+    permissions:
+      - action: publish
+  - user: any
+    pass:
+    permissions:
+      - action: read
+      - action: playback

@@ -119,6 +119,21 @@ app/services/yolo_detector.py
 
 하드웨어 CCTV 또는 IP 카메라를 연결할 때는 카메라 등록 API에 `rtspUrl`을 저장한 뒤 WebRTC offer 요청에서 `cameraId`를 넘기면 됩니다.
 
+### 7.1 다른 네트워크의 카메라를 push로 연결하기
+
+카메라가 방화벽/NAT 뒤에 있어 백엔드가 직접 pull(연결)할 수 없는 경우, `docker-compose.yml`에 포함된 `mediamtx` 서비스로 카메라가 직접 push하게 할 수 있습니다.
+
+1. `mediamtx.yml`의 `publishUser`/`publishPass`(기본값 `publisher`/`change-this-password`)를 실제 값으로 바꾸세요.
+2. 카메라(또는 카메라 노드)에서 메인 서버로 push:
+   ```bash
+   ffmpeg -i <카메라 입력> -c copy -f rtsp rtsp://publisher:<비밀번호>@<메인서버IP>:8554/cam1
+   ```
+3. 백엔드에 카메라 등록 시 `rtspUrl`은 **로컬 주소**로 지정합니다 (백엔드와 mediamtx가 같은 호스트에서 `network_mode: host`로 돌기 때문):
+   ```json
+   { "name": "원격카메라-1", "rtspUrl": "rtsp://127.0.0.1:8554/cam1", "location": "..." }
+   ```
+4. 외부 카메라가 push할 수 있으려면 메인 서버의 8554/TCP·UDP 포트를 포트포워딩해야 합니다.
+
 직접 source를 넘기는 예시는 아래와 같습니다.
 
 ```json
