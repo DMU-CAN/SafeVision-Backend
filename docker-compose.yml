@@ -26,7 +26,10 @@ services:
     restart: unless-stopped
 
   coturn:
-    image: instrumentisto/coturn:latest
+    # instrumentisto/coturn is amd64-only and fails with "exec format error"
+    # on the arm64 Pi this actually runs on — coturn/coturn is the official
+    # image and publishes real multi-arch manifests (amd64 + arm64).
+    image: coturn/coturn:latest
     network_mode: host
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
