@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from datetime import datetime, timezone
@@ -10,6 +11,14 @@ from app.models.robot_dispatch import RobotDispatch
 from app.models.safety_event import SafetyEvent
 from app.services.motor_controller import get_motor_controller
 from app.services.recording_service import extract_event_clip
+
+DEMO_DISPATCH_ROUTE = [
+    {"direction": "forward", "durationMs": 2500},
+    {"direction": "right", "durationMs": 700},
+    {"direction": "forward", "durationMs": 1800},
+    {"direction": "left", "durationMs": 700},
+    {"direction": "forward", "durationMs": 1200},
+]
 
 
 def record_fall_detected_event(camera_id: int | None = None) -> None:
@@ -124,6 +133,23 @@ def _dispatch_idle_robot(db, event: SafetyEvent) -> None:
     robot.status = "DISPATCHED"
     db.commit()
     print(f"[BARO][ROBOT_DISPATCH] robot_id={robot.id} event_id={event.id}")
+    try:
+        from app.services import robot_connections
+
+        sent = asyncio.run(
+            robot_connections.send_command(
+                robot.id,
+                {
+                    "type": "dispatch",
+                    "fallbackRoute": DEMO_DISPATCH_ROUTE,
+                    "safetyEventId": event.id,
+                    "dispatchId": dispatch.id,
+                },
+            )
+        )
+        print(f"[BARO][ROBOT_DISPATCH] command_sent={sent} robot_id={robot.id} event_id={event.id}")
+    except Exception as exc:
+        print(f"[BARO][ROBOT_DISPATCH][COMMAND_ERROR] robot_id={robot.id} event_id={event.id}: {exc}")
 
 
 def _save_event_clip(camera_id: int, event_id: int, event_type: str, event_timestamp: float) -> None:

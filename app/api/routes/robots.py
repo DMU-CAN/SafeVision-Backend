@@ -81,7 +81,8 @@ def register_robot(payload: RobotRegisterRequest, db: Session = Depends(get_db))
     robot.name = payload.name
     robot.control_address = payload.control_address
     robot.camera_rtsp_url = payload.camera_rtsp_url
-    robot.status = "IDLE"
+    if created or robot.status == "OFFLINE":
+        robot.status = "IDLE"
 
     db.commit()
     db.refresh(robot)
@@ -126,8 +127,45 @@ async def send_move_command(robot_id: int, payload: RobotMoveRequest, db: Sessio
     return success_response(data={"sent": sent}, message="로봇 주행 명령을 전송했습니다.")
 
 
+@router.post("/{robot_id}/route-record/start", dependencies=protected)
+async def start_route_recording(robot_id: int, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "route_record_start"})
+    return success_response(data={"sent": sent}, message="이동 경로 녹화를 시작했습니다.")
+
+
+@router.post("/{robot_id}/route-record/save", dependencies=protected)
+async def save_route_recording(robot_id: int, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "route_record_save"})
+    return success_response(data={"sent": sent}, message="이동 경로를 저장했습니다.")
+
+
+@router.post("/{robot_id}/route-record/clear", dependencies=protected)
+async def clear_route_recording(robot_id: int, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "route_record_clear"})
+    return success_response(data={"sent": sent}, message="저장된 이동 경로를 삭제했습니다.")
+
+
+@router.post("/{robot_id}/route-record/play", dependencies=protected)
+async def play_route_recording(robot_id: int, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "route_play"})
+    return success_response(data={"sent": sent}, message="저장된 이동 경로 재생을 시작했습니다.")
+
+
+DEMO_DISPATCH_ROUTE = [
+    {"direction": "forward", "durationMs": 2500},
+    {"direction": "right", "durationMs": 700},
+    {"direction": "forward", "durationMs": 1800},
+    {"direction": "left", "durationMs": 700},
+    {"direction": "forward", "durationMs": 1200},
+]
+
+
 @router.post("/{robot_id}/dispatch", status_code=status.HTTP_201_CREATED, dependencies=protected)
-def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = Depends(get_db)):
+async def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
 
     target_x: float | None = None
@@ -154,7 +192,19 @@ def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = D
     robot.status = "DISPATCHED"
     db.commit()
     db.refresh(dispatch)
-    return success_response(data=serialize_dispatch(dispatch), message="로봇을 출동시켰습니다.")
+    sent = await robot_connections.send_command(
+        robot_id,
+        {
+            "type": "dispatch",
+            "fallbackRoute": DEMO_DISPATCH_ROUTE,
+            "safetyEventId": payload.safety_event_id,
+            "dispatchId": dispatch.id,
+        },
+    )
+    return success_response(
+        data={**serialize_dispatch(dispatch), "sent": sent},
+        message="로봇을 출동시켰습니다.",
+    )
 
 
 @router.post("/{robot_id}/return", dependencies=protected)
