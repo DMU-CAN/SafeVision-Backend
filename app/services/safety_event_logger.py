@@ -64,6 +64,7 @@ def _record_event(
     equipment_action: str = "stop",
 ) -> None:
     event_id: int | None = None
+    event_timestamp: float | None = None
     db = SessionLocal()
     try:
         event = SafetyEvent(
@@ -76,6 +77,7 @@ def _record_event(
         db.commit()
         db.refresh(event)
         event_id = event.id
+        event_timestamp = event.created_at.timestamp()
         _dispatch_idle_robot(db, event)
     except Exception as exc:
         db.rollback()
@@ -88,8 +90,12 @@ def _record_event(
     elif equipment_action == "slow":
         get_motor_controller().slow()
 
-    if camera_id is not None and event_id is not None:
-        threading.Thread(target=_save_event_clip, args=(camera_id, event_id, event_type), daemon=True).start()
+    if camera_id is not None and event_id is not None and event_timestamp is not None:
+        threading.Thread(
+            target=_save_event_clip,
+            args=(camera_id, event_id, event_type, event_timestamp),
+            daemon=True,
+        ).start()
 
 
 def _dispatch_idle_robot(db, event: SafetyEvent) -> None:
@@ -120,12 +126,12 @@ def _dispatch_idle_robot(db, event: SafetyEvent) -> None:
     print(f"[BARO][ROBOT_DISPATCH] robot_id={robot.id} event_id={event.id}")
 
 
-def _save_event_clip(camera_id: int, event_id: int, event_type: str) -> None:
+def _save_event_clip(camera_id: int, event_id: int, event_type: str, event_timestamp: float) -> None:
     # Wait for post-roll footage to land in the rolling buffer before
     # concatenating it into a permanent clip, so the saved clip covers both
     # sides of the event, not just the moments before it.
     time.sleep(get_settings().recording_clip_post_roll_seconds)
-    clip_path = extract_event_clip(camera_id, event_id)
+    clip_path = extract_event_clip(camera_id, event_id, event_timestamp)
     if not clip_path:
         return
 

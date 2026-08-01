@@ -87,17 +87,29 @@ def stop_all_recordings() -> None:
         stop_recording(camera_id)
 
 
-def extract_event_clip(camera_id: int, event_id: int) -> str | None:
-    """Concatenates whatever buffer segments currently exist for a camera
-    into a permanent clip file. Called after a post-roll delay so the buffer
-    includes footage from both before and after the event."""
+def extract_event_clip(camera_id: int, event_id: int, event_timestamp: float) -> str | None:
+    """Concatenates only the rolling-buffer segments around the event.
+    Called after a post-roll delay so the selected window includes footage
+    from both before and after the event, without saving the whole buffer."""
     buffer_dir = _buffer_dir(camera_id)
     if not buffer_dir.exists():
         return None
 
-    segments = sorted(buffer_dir.glob("seg_*.mp4"), key=lambda path: path.stat().st_mtime)
-    if not segments:
+    settings = get_settings()
+    all_segments = sorted(buffer_dir.glob("seg_*.mp4"), key=lambda path: path.stat().st_mtime)
+    if not all_segments:
         return None
+    pre_roll_seconds = settings.recording_segment_seconds
+    post_roll_seconds = settings.recording_clip_post_roll_seconds
+    window_start = event_timestamp - pre_roll_seconds - settings.recording_segment_seconds
+    window_end = event_timestamp + post_roll_seconds + settings.recording_segment_seconds
+    segments = [
+        segment
+        for segment in all_segments
+        if window_start <= segment.stat().st_mtime <= window_end
+    ]
+    if not segments:
+        segments = all_segments[-2:]
 
     clips_dir = _clips_dir()
     clips_dir.mkdir(parents=True, exist_ok=True)
@@ -111,7 +123,7 @@ def extract_event_clip(camera_id: int, event_id: int) -> str | None:
             [
                 "ffmpeg", "-loglevel", "warning", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(concat_list),
-                "-c", "copy", str(clip_path),
+                "-c", "copy", "-movflags", "+faststart", str(clip_path),
             ],
             check=False,
         )
