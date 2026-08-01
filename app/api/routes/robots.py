@@ -96,13 +96,35 @@ def get_robot(robot_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{robot_id}", dependencies=protected)
-def update_robot(robot_id: int, payload: RobotUpdateRequest, db: Session = Depends(get_db)):
+async def update_robot(robot_id: int, payload: RobotUpdateRequest, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
+    previous_status = robot.status
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(robot, key, value)
+
+    dispatch: RobotDispatch | None = None
+    should_start_dispatch = previous_status == "IDLE" and robot.status == "DISPATCHED"
+    if should_start_dispatch:
+        dispatch = RobotDispatch(robot_id=robot_id)
+        db.add(dispatch)
+
     db.commit()
     db.refresh(robot)
-    return success_response(data=serialize_robot(robot), message="로봇 정보가 수정되었습니다.")
+    sent: bool | None = None
+    if dispatch is not None:
+        db.refresh(dispatch)
+        sent = await robot_connections.send_command(
+            robot_id,
+            {
+                "type": "dispatch",
+                "fallbackRoute": DEMO_DISPATCH_ROUTE,
+                "dispatchId": dispatch.id,
+            },
+        )
+    data = serialize_robot(robot)
+    if sent is not None:
+        data["sent"] = sent
+    return success_response(data=data, message="로봇 정보가 수정되었습니다.")
 
 
 @router.delete("/{robot_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=protected)
