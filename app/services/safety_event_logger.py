@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.models.camera import Camera
+from app.models.robot import Robot
+from app.models.robot_dispatch import RobotDispatch
 from app.models.safety_event import SafetyEvent
 from app.services.motor_controller import get_motor_controller
 from app.services.recording_service import extract_event_clip
@@ -73,6 +76,7 @@ def _record_event(
         db.commit()
         db.refresh(event)
         event_id = event.id
+        _dispatch_idle_robot(db, event)
     except Exception as exc:
         db.rollback()
         print(f"[BARO][{event_type}][DB_ERROR] {exc}")
@@ -86,6 +90,34 @@ def _record_event(
 
     if camera_id is not None and event_id is not None:
         threading.Thread(target=_save_event_clip, args=(camera_id, event_id, event_type), daemon=True).start()
+
+
+def _dispatch_idle_robot(db, event: SafetyEvent) -> None:
+    if event.event_type not in {"FALL_DETECTED", "ZONE_INTRUSION"}:
+        return
+
+    robot = db.query(Robot).filter(Robot.status == "IDLE").order_by(Robot.id.asc()).first()
+    if robot is None:
+        print(f"[BARO][ROBOT_DISPATCH] no idle robot for event_id={event.id}")
+        return
+
+    target_x: float | None = None
+    target_y: float | None = None
+    if event.camera_id is not None:
+        camera = db.get(Camera, event.camera_id)
+        if camera is not None:
+            target_x, target_y = camera.location_x, camera.location_y
+
+    dispatch = RobotDispatch(
+        robot_id=robot.id,
+        safety_event_id=event.id,
+        target_x=target_x,
+        target_y=target_y,
+    )
+    db.add(dispatch)
+    robot.status = "DISPATCHED"
+    db.commit()
+    print(f"[BARO][ROBOT_DISPATCH] robot_id={robot.id} event_id={event.id}")
 
 
 def _save_event_clip(camera_id: int, event_id: int, event_type: str) -> None:
