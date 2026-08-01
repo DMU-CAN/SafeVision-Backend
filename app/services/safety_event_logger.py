@@ -1,4 +1,3 @@
-import asyncio
 import threading
 import time
 from datetime import datetime, timezone
@@ -132,20 +131,19 @@ def _dispatch_idle_robot(db, event: SafetyEvent) -> None:
     db.add(dispatch)
     robot.status = "DISPATCHED"
     db.commit()
+    db.refresh(dispatch)
     print(f"[BARO][ROBOT_DISPATCH] robot_id={robot.id} event_id={event.id}")
     try:
         from app.services import robot_connections
 
-        sent = asyncio.run(
-            robot_connections.send_command(
-                robot.id,
-                {
-                    "type": "dispatch",
-                    "fallbackRoute": DEMO_DISPATCH_ROUTE,
-                    "safetyEventId": event.id,
-                    "dispatchId": dispatch.id,
-                },
-            )
+        sent = robot_connections.send_command_threadsafe(
+            robot.id,
+            {
+                "type": "dispatch",
+                "fallbackRoute": DEMO_DISPATCH_ROUTE,
+                "safetyEventId": event.id,
+                "dispatchId": dispatch.id,
+            },
         )
         print(f"[BARO][ROBOT_DISPATCH] command_sent={sent} robot_id={robot.id} event_id={event.id}")
     except Exception as exc:
