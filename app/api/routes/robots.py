@@ -149,6 +149,19 @@ def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Session = D
     return success_response(data=serialize_dispatch(dispatch), message="로봇을 출동시켰습니다.")
 
 
+@router.post("/{robot_id}/return", dependencies=protected)
+async def return_robot(robot_id: int, db: Session = Depends(get_db)):
+    robot = get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "return"})
+    robot.status = "IDLE"
+    db.commit()
+    db.refresh(robot)
+    return success_response(
+        data={"robot": serialize_robot(robot), "sent": sent},
+        message="로봇 복귀 명령을 전송했습니다.",
+    )
+
+
 @router.get("/{robot_id}/dispatches", dependencies=protected)
 def list_dispatches(robot_id: int, db: Session = Depends(get_db)):
     get_robot_or_404(robot_id, db)
