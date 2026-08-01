@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreateRequest, CameraResponse, CameraUpdateRequest, StreamUrlResponse
 from app.services.camera_sources import build_camera_source
+from app.services.camera_stream_hub import start_camera_hub, stop_camera_hub
 from app.services.recording_service import build_timeshift_clip, start_recording, stop_recording
 
 
@@ -41,7 +42,7 @@ def list_cameras(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_camera(payload: CameraCreateRequest, db: Session = Depends(get_db)):
+async def create_camera(payload: CameraCreateRequest, db: Session = Depends(get_db)):
     camera = Camera(
         name=payload.name,
         rtsp_url=payload.rtsp_url,
@@ -53,6 +54,7 @@ def create_camera(payload: CameraCreateRequest, db: Session = Depends(get_db)):
     db.add(camera)
     db.commit()
     db.refresh(camera)
+    start_camera_hub(camera.id, camera.rtsp_url)
     start_recording(camera.id, camera.rtsp_url)
     return success_response(data=serialize_camera(camera), message="카메라가 등록되었습니다.")
 
@@ -64,7 +66,7 @@ def get_camera(camera_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{camera_id}")
-def update_camera(camera_id: int, payload: CameraUpdateRequest, db: Session = Depends(get_db)):
+async def update_camera(camera_id: int, payload: CameraUpdateRequest, db: Session = Depends(get_db)):
     camera = get_camera_or_404(camera_id, db)
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -72,16 +74,18 @@ def update_camera(camera_id: int, payload: CameraUpdateRequest, db: Session = De
     db.commit()
     db.refresh(camera)
     if "rtsp_url" in update_data:
+        start_camera_hub(camera.id, camera.rtsp_url)
         stop_recording(camera.id)
         start_recording(camera.id, camera.rtsp_url)
     return success_response(data=serialize_camera(camera), message="카메라 정보가 수정되었습니다.")
 
 
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_camera(camera_id: int, db: Session = Depends(get_db)):
+async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
     camera = get_camera_or_404(camera_id, db)
     db.delete(camera)
     db.commit()
+    await stop_camera_hub(camera_id)
     stop_recording(camera_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.responses import error_response, success_response
 from app.db.session import Base, SessionLocal, engine, run_lightweight_migrations
 from app.models.camera import Camera
+from app.services.camera_stream_hub import start_camera_hub, stop_all_camera_hubs
 from app.services.recording_service import start_recording, stop_all_recordings
 
 
@@ -26,6 +27,7 @@ async def lifespan(_: FastAPI):
     db = SessionLocal()
     try:
         for camera in db.query(Camera).all():
+            start_camera_hub(camera.id, camera.rtsp_url)
             start_recording(camera.id, camera.rtsp_url)
     finally:
         db.close()
@@ -33,6 +35,7 @@ async def lifespan(_: FastAPI):
     yield
 
     stop_all_recordings()
+    await stop_all_camera_hubs()
     await close_all_sessions()
 
 

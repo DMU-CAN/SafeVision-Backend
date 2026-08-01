@@ -81,11 +81,18 @@ def get_yolo_detector() -> YoloDetector:
 
 
 class YoloAnnotatedTrack(VideoStreamTrack):
-    def __init__(self, source_track: VideoStreamTrack, confidence: float, camera_id: int | None = None) -> None:
+    def __init__(
+        self,
+        source_track: VideoStreamTrack,
+        confidence: float,
+        camera_id: int | None = None,
+        record_events: bool = True,
+    ) -> None:
         super().__init__()
         self.source_track = source_track
         self.confidence = confidence
         self.camera_id = camera_id
+        self.record_events = record_events
         self.last_fall_event_at = 0.0
         self.last_zone_event_at = 0.0
         self.last_drift_event_at = 0.0
@@ -134,8 +141,9 @@ class YoloAnnotatedTrack(VideoStreamTrack):
         # collapse matters no matter where it happens. Zone intrusion is a
         # separate, zone-gated signal for anyone (fallen or not) standing
         # inside a configured danger zone.
-        self._record_fall_event_if_needed(fall_detections)
-        self._record_zone_intrusion_if_needed(person_detections, frame_width, frame_height)
+        if self.record_events:
+            self._record_fall_event_if_needed(fall_detections)
+            self._record_zone_intrusion_if_needed(person_detections, frame_width, frame_height)
 
         annotated_frame = VideoFrame.from_ndarray(image, format="bgr24")
         # Use our own monotonic timestamp for the outgoing WebRTC track
