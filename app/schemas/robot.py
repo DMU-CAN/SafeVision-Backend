@@ -6,7 +6,8 @@ from app.core.datetime_utils import UtcDatetime
 
 
 RobotStatus = Literal["IDLE", "DISPATCHED", "OFFLINE"]
-PtzDirection = Literal["up", "down", "left", "right", "zoomIn", "zoomOut", "stop"]
+PtzDirection = Literal["up", "down", "left", "right", "stop"]
+MoveDirection = Literal["forward", "backward", "left", "right", "stop"]
 
 
 class RobotCreateRequest(BaseModel):
@@ -62,6 +63,10 @@ class RobotResponse(BaseModel):
 
 class RobotPtzRequest(BaseModel):
     direction: PtzDirection
+
+
+class RobotMoveRequest(BaseModel):
+    direction: MoveDirection
 
 
 class RobotDispatchRequest(BaseModel):

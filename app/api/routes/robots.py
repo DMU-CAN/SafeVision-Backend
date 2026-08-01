@@ -13,6 +13,7 @@ from app.schemas.robot import (
     RobotCreateRequest,
     RobotDispatchRequest,
     RobotDispatchResponse,
+    RobotMoveRequest,
     RobotPtzRequest,
     RobotRegisterRequest,
     RobotResponse,
@@ -116,6 +117,13 @@ async def send_ptz_command(robot_id: int, payload: RobotPtzRequest, db: Session 
     get_robot_or_404(robot_id, db)
     sent = await robot_connections.send_command(robot_id, {"type": "ptz", "direction": payload.direction})
     return success_response(data={"sent": sent}, message="PTZ 명령을 전송했습니다.")
+
+
+@router.post("/{robot_id}/move", dependencies=protected)
+async def send_move_command(robot_id: int, payload: RobotMoveRequest, db: Session = Depends(get_db)):
+    get_robot_or_404(robot_id, db)
+    sent = await robot_connections.send_command(robot_id, {"type": "move", "direction": payload.direction})
+    return success_response(data={"sent": sent}, message="로봇 주행 명령을 전송했습니다.")
 
 
 @router.post("/{robot_id}/dispatch", status_code=status.HTTP_201_CREATED, dependencies=protected)
