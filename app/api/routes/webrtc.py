@@ -85,10 +85,13 @@ def resolve_camera_source(payload: WebRTCOfferRequest, db: Session) -> CameraSou
 async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depends(get_db)):
     session_id = str(uuid.uuid4())
     peer_connection = build_peer_connection()
+    target_label = f"camera_id={payload.camera_id}" if payload.camera_id is not None else f"robot_id={payload.robot_id}"
+    print(f"[BARO][WEBRTC] offer received session_id={session_id} {target_label}")
 
     try:
         camera_source = resolve_camera_source(payload, db)
         video_track = await asyncio.to_thread(camera_source.create_video_track)
+        print(f"[BARO][WEBRTC] video track ready session_id={session_id} {target_label}")
         peer_connection.addTrack(video_track)
 
         @peer_connection.on("connectionstatechange")
@@ -101,6 +104,7 @@ async def create_webrtc_answer(payload: WebRTCOfferRequest, db: Session = Depend
         await peer_connection.setLocalDescription(answer)
 
         active_sessions[session_id] = WebRTCSession(peer_connection=peer_connection, camera_source=camera_source)
+        print(f"[BARO][WEBRTC] answer ready session_id={session_id} {target_label}")
         response = WebRTCAnswerResponse(
             sdp=peer_connection.localDescription.sdp,
             type="answer",

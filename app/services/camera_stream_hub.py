@@ -123,7 +123,7 @@ class CameraStreamHub:
             return
 
         self._last_inference_at = now
-        detector = get_yolo_detector()
+        detector = await asyncio.to_thread(get_yolo_detector)
         detections = await asyncio.to_thread(detector.detect, image, settings.yolo_confidence)
         fall_detections = []
         person_detections = []
