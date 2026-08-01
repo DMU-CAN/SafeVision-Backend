@@ -233,9 +233,6 @@ async def dispatch_robot(robot_id: int, payload: RobotDispatchRequest, db: Sessi
 async def return_robot(robot_id: int, db: Session = Depends(get_db)):
     robot = get_robot_or_404(robot_id, db)
     sent = await robot_connections.send_command(robot_id, {"type": "return"})
-    robot.status = "IDLE"
-    db.commit()
-    db.refresh(robot)
     return success_response(
         data={"robot": serialize_robot(robot), "sent": sent},
         message="로봇 복귀 명령을 전송했습니다.",
