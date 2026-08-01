@@ -49,6 +49,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# CORSMiddleware treats WebSocket upgrade requests like browser requests and
+# rejects unknown origins with 403 — but robot nodes are server-side Python
+# clients, not browsers, so CORS doesn't apply to them. Strip the Origin
+# header from WebSocket scopes before CORS sees it; an absent Origin is
+# always passed through unchanged by CORSMiddleware.
+from starlette.types import ASGIApp, Receive, Scope, Send  # noqa: E402
+
+
+class _StripWebSocketOrigin:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            scope = {
+                **scope,
+                "headers": [(k, v) for k, v in scope.get("headers", []) if k.lower() != b"origin"],
+            }
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_StripWebSocketOrigin)
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
